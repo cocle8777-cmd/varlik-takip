@@ -46,7 +46,7 @@ export function mapBsodRow(raw) {
     // Genel liste bileşenleriyle uyum için ortak alanlar
     owner: shortHost(machine),
     serial: kb.name + (kb.code ? ` (${kb.code})` : ""),
-    sub: `${kb.category}${count > 1 ? ` · ${count}×` : ""}`,
+    sub: `${when || "—"} · ${kb.category}${count > 1 ? ` · ${count}×` : ""}`,
     model: kb.title,
     location: when || "—",
     lbsParent: "",

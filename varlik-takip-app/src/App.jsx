@@ -451,6 +451,43 @@ export default function App({ user, onLogout } = {}) {
     return computeUnusedDevices({ thRows: realThAll, sccmRows: realSccmAll, staleDays });
   }, [realThAll, realSccmAll, staleDays]);
 
+  // hostname (küçük harf) -> SCCM satırı. LAKESIDE BSOD/Battery raporlarında lokasyon + kullanıcı
+  // mailini hostname ile eşleştirmek için (kullanıcı isteği: "hostname var, SCCM'den eşleştir").
+  const sccmByHostname = useMemo(() => {
+    const m = new Map();
+    realSccmAll.forEach((s) => {
+      const h = String(s.hostname || "").trim().toLowerCase();
+      if (h) m.set(h, s);
+    });
+    return m;
+  }, [realSccmAll]);
+
+  const enrichWithSccm = (rows, { setLocationColumn = false } = {}) =>
+    rows.map((r) => {
+      const s =
+        sccmByHostname.get(String(r.hostname || "").trim().toLowerCase()) ||
+        sccmByHostname.get(String(r.hostShort || "").trim().toLowerCase());
+      const loc = s && s.location && s.location !== "—" ? s.location : "";
+      const base = {
+        ...r,
+        sccmMatched: !!s,
+        sccmHostname: s ? s.hostname : "",
+        sccmLocation: loc,
+        sccmLbsParent: s ? s.lbsParent || "" : "",
+        sccmUser: s ? s.userLabel || "" : "",
+        sccmUserMail: s ? s.mail || "" : "",
+      };
+      // BSOD listesinde "Lokasyon" kolonu SCCM'den doldurulur (crash tarihi alt satırda kalır).
+      if (setLocationColumn) {
+        base.location = loc || "—";
+        base.lbsParent = (s && s.lbsParent) || r.lbsParent || "";
+      }
+      return base;
+    });
+
+  const bsodRows = useMemo(() => (realBsodAll.length ? enrichWithSccm(realBsodAll, { setLocationColumn: true }) : []), [realBsodAll, sccmByHostname]);
+  const batteryRows = useMemo(() => (realBatteryAll.length ? enrichWithSccm(realBatteryAll) : []), [realBatteryAll, sccmByHostname]);
+
   const inaktifCompanies = useMemo(() => {
     if (!hasRealCompanies) return [];
     const set = new Set([...realInaktifAll, ...realDiskAll, ...unusedDeviceRows].map((r) => r.company).filter(Boolean));
@@ -473,7 +510,7 @@ export default function App({ user, onLogout } = {}) {
   const ownerLabel = isDiskReport ? "Hostname" : isUnused ? "Zimmet Sahibi" : isBsod || isBattery ? "Cihaz" : "Cihaz Sahibi";
   const serialLabel = isDiskReport ? "Volume Name" : isUnused ? "Seri No / Durum" : isBsod ? "BSOD Kodu" : isBattery ? "Batarya Sağlığı" : "Seri No / Model";
   const modelLabel = isDiskReport ? "Free Space" : "Model";
-  const locationLabel = isDiskReport ? "Size" : isBsod ? "Crash Tarihi" : isBattery ? "Pil Durumu" : "Lokasyon";
+  const locationLabel = isDiskReport ? "Size" : isBattery ? "Pil Durumu" : "Lokasyon";
   // owner + serial birlikte: Disk Alanı'nda "serial" (Volume Name) tek başına eşsiz değil
   // (aynı "Windows" birimi yüzlerce cihazda tekrarlanıyor) — hostname eklenmeden aynı anahtar
   // birden fazla satıra düşüp bir tanesini seçince hepsini birden seçili gösteriyordu
@@ -597,9 +634,9 @@ export default function App({ user, onLogout } = {}) {
   const rawRows = isZimmet
     ? zimmetRows
     : isBsod
-    ? realBsodAll
+    ? bsodRows
     : isBattery
-    ? realBatteryAll
+    ? batteryRows
     : isUnused
     ? (activeCompany === "all" ? unusedDeviceRows : unusedDeviceRows.filter((r) => r.company === activeCompany))
     : usingRealInaktif
@@ -920,6 +957,10 @@ export default function App({ user, onLogout } = {}) {
         return {
           "Cihaz": r.hostShort || r.hostname || "",
           "Hostname (tam)": r.hostname || "",
+          "Lokasyon (SCCM)": r.sccmLocation || "—",
+          "Üst Lokasyon (SCCM)": r.sccmLbsParent || "—",
+          "Son Kullanıcı (SCCM)": r.sccmUser || "—",
+          "Kullanıcı Mail (SCCM)": r.sccmUserMail || "—",
           "Crash Tarihi": r.crashDate || "",
           "BSOD Kodu": r.bsodName || "",
           "Hex": r.bsodHex || "",
@@ -936,6 +977,9 @@ export default function App({ user, onLogout } = {}) {
       return rows.map((r) => ({
         "Cihaz": r.hostShort || r.hostname || "",
         "Hostname (tam)": r.hostname || "",
+        "Lokasyon (SCCM)": r.sccmLocation || "—",
+        "Son Kullanıcı (SCCM)": r.sccmUser || "—",
+        "Kullanıcı Mail (SCCM)": r.sccmUserMail || "—",
         "Batarya Sağlığı %": r.batteryHealth != null ? r.batteryHealth : "Veri Yok",
         "Döngü Sayısı": r.cycleCount != null ? r.cycleCount : "",
         "Tasarım Kapasitesi": r.designCapacity != null ? r.designCapacity : "",
@@ -1184,16 +1228,7 @@ export default function App({ user, onLogout } = {}) {
       </div>`;
   };
 
-  // Disk Alanı Excel'inde Seri No/OU Adı/Bitlocker/kullanıcı maili yok — bu alanlar hostname
-  // üzerinden gerçek SCCM envanterinden (zaten yüklü realSccmAll) zenginleştiriliyor (bkz. konuşma).
-  // Eşleşme yoksa alan uydurulmuyor, boş bırakılıyor.
-  const sccmByHostname = useMemo(() => {
-    const map = new Map();
-    realSccmAll.forEach((s) => {
-      if (s.hostname) map.set(s.hostname.trim().toLowerCase(), s);
-    });
-    return map;
-  }, [realSccmAll]);
+  // (sccmByHostname yukarıda tanımlı — Disk Alanı zenginleştirmesi + LAKESIDE BSOD/Battery eşleşmesi ortak kullanır.)
 
   // Disk Alanı kritik mail şablonu — kullanıcının verdiği TR+EN metin birebir korunuyor,
   // sadece boş alanlar gerçek verilerle dolduruluyor (bkz. konuşma)
@@ -1411,108 +1446,132 @@ IT Support`;
     }
   };
 
-  // LAKESIDE BSOD — tek konsolide mail: her stop code için neden + ThinkPad/kurumsal imaj
-  // çözüm adımları GÖMÜLÜ (bkz. bsodKnowledgeService). Alıcı: elle girilen adres(ler); boşsa
-  // lokasyon mail gruplarındaki tüm adresler (IT dağıtım listesi). Lokasyon bilgisi dosyada yok.
+  // LAKESIDE (BSOD + Battery Health) ortak gönderim: her satırın hostname'i SCCM ile eşleştirilip
+  // EnvanterLokasyon bulunur, Lokasyon Mail Grupları'ndaki adrese lokasyon lokasyon ayrı mail gider
+  // (İnaktif Cihazlar deseni). SCCM'de bulunamayan veya lokasyonun mail grubu tanımsız olan kayıtlar
+  // için, rapor ekranındaki "Mail alıcı(lar)" kutusuna adres girildiyse tek bir yedek mail; o da
+  // boşsa bu kayıtlar "atlandı" olarak Gönderim Geçmişi'ne yazılır.
+  const sendLakesideMailByLocation = async ({ targetRows, buildHtml, subjectFn, reportLabel, reportId, actionDesc, textFn }) => {
+    const mailGroups = parseMailGroupsText(mailGroupsText);
+    const fallback = bsodMailTo.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
+
+    const byLoc = new Map();
+    const noRoute = [];
+    targetRows.forEach((r) => {
+      const loc = r.sccmLocation || "";
+      if (loc && mailGroups[loc]) {
+        if (!byLoc.has(loc)) byLoc.set(loc, []);
+        byLoc.get(loc).push(r);
+      } else {
+        noRoute.push(r);
+      }
+    });
+
+    let sent = 0, failed = 0, skipped = 0;
+    const details = [];
+    const sentHosts = new Set();
+
+    const sendOne = async (label, to, rows) => {
+      const hasLabel = label && label !== "—";
+      const subject = `${subjectFn(rows)}${hasLabel ? ` — ${label}` : ""}`;
+      try {
+        const result = await backendClient.sendMail({
+          to,
+          subject,
+          text: textFn(rows),
+          html: buildHtml(rows, { locationLabel: hasLabel ? label : "" }),
+        });
+        if (result.ok) {
+          sent += rows.length;
+          rows.forEach((r) => sentHosts.add(r.hostShort));
+          details.push({ location: label, to, count: rows.length, ok: true, message: "Gönderildi" });
+          rows.forEach((r) =>
+            logDeviceAction(
+              { hostname: r.hostShort, serial: "" },
+              { type: "Mail", description: `${actionDesc}${hasLabel ? ` (${label})` : ""}`, mailSubject: subject, user: user?.username || "", reportId, status: "Başarılı" }
+            )
+          );
+        } else {
+          failed += rows.length;
+          details.push({ location: label, to, count: rows.length, ok: false, message: result.message || "Gönderilemedi" });
+        }
+      } catch (err) {
+        failed += rows.length;
+        details.push({ location: label, to, count: rows.length, ok: false, message: err.message || "Gönderilemedi" });
+      }
+    };
+
+    for (const [loc, rows] of byLoc) await sendOne(loc, mailGroups[loc], rows);
+    if (noRoute.length) {
+      if (fallback.length) {
+        await sendOne("Eşleşmeyen cihazlar", fallback.join(", "), noRoute);
+      } else {
+        skipped += noRoute.length;
+        details.push({
+          location: "Eşleşmeyen cihazlar",
+          to: null,
+          count: noRoute.length,
+          ok: false,
+          message: "SCCM'de lokasyon bulunamadı ya da lokasyonun mail grubu tanımsız — alıcı kutusu da boş",
+        });
+      }
+    }
+
+    recordMailHistory({
+      id: Date.now(),
+      date: new Date().toLocaleString("tr-TR"),
+      dept: "LakeSide",
+      report: reportLabel,
+      recipients: sentHosts.size,
+      status: failed > 0 ? "Kısmen Başarısız" : sent > 0 ? "Başarılı" : "Gönderilemedi",
+      details,
+    });
+
+    if (sent === 0 && failed === 0 && skipped > 0) {
+      showToast(`❌ Gönderilemedi — ${skipped} kayıt için lokasyon/alıcı yok. Ayarlar > Lokasyon Mailleri'ni doldurun ya da üstteki kutuya adres girin.`);
+    } else if (skipped > 0) {
+      showToast(`⚠️ ${sent} kayıt ${byLoc.size} lokasyona gönderildi · ${skipped} kayıt eşleşmedi${failed ? ` · ${failed} başarısız` : ""}`);
+    } else if (failed > 0 && sent === 0) {
+      showToast(`❌ Gönderilemedi — ${failed} kayıt başarısız`);
+    } else if (failed > 0) {
+      showToast(`⚠️ ${sent} kayıt gönderildi · ${failed} başarısız`);
+    } else {
+      showToast(`✅ ${sent} kayıt · ${byLoc.size} lokasyon${noRoute.length ? " + 1 yedek" : ""} mailine gönderildi`);
+    }
+  };
+
   const handleBsodMail = async () => {
     const targetRows = resolveTargetRows();
     if (targetRows.length === 0) {
       showToast("Gönderilecek BSOD kaydı yok");
       return;
     }
-    let recipients = bsodMailTo
-      .split(/[;,\s]+/)
-      .map((s) => s.trim())
-      .filter((s) => /@/.test(s));
-    if (recipients.length === 0) {
-      recipients = [...new Set(Object.values(parseMailGroupsText(mailGroupsText)))];
-    }
-    if (recipients.length === 0) {
-      showToast("Alıcı yok — üstteki kutuya bir e-posta adresi girin veya Ayarlar > Lokasyon Mailleri'ni doldurun");
-      return;
-    }
-    const to = recipients.join(", ");
-    const subject = bsodMailSubject(targetRows);
-    const html = buildBsodMailHtml(targetRows, {});
-    let ok = false;
-    let message = "";
-    try {
-      const result = await backendClient.sendMail({
-        to,
-        subject,
-        text: `BSOD raporu: ${targetRows.length} olay, ${new Set(targetRows.map((r) => r.hostShort)).size} cihaz. Ayrıntı ve çözüm adımları HTML gövdededir.`,
-        html,
-      });
-      ok = !!result.ok;
-      message = result.message || (ok ? "Gönderildi" : "Gönderilemedi");
-    } catch (err) {
-      message = err.message || "Gönderilemedi";
-    }
-    if (ok) {
-      // Her etkilenen cihaza aksiyon geçmişi kaydı
-      [...new Set(targetRows.map((r) => r.hostShort))].forEach((h) =>
-        logDeviceAction(
-          { hostname: h, serial: "" },
-          { type: "Mail", description: `BSOD çözüm adımları maili gönderildi`, mailSubject: subject, user: user?.username || "", reportId: "bsod", status: "Başarılı" }
-        )
-      );
-    }
-    recordMailHistory({
-      id: Date.now(),
-      date: new Date().toLocaleString("tr-TR"),
-      dept: "LakeSide",
-      report: "BSOD",
-      recipients: ok ? new Set(targetRows.map((r) => r.hostShort)).size : 0,
-      status: ok ? "Başarılı" : "Gönderilemedi",
-      details: [{ location: `${new Set(targetRows.map((r) => r.hostShort)).size} cihaz / ${targetRows.length} olay`, to, count: targetRows.length, ok, message }],
+    return sendLakesideMailByLocation({
+      targetRows,
+      buildHtml: buildBsodMailHtml,
+      subjectFn: bsodMailSubject,
+      reportLabel: "BSOD",
+      reportId: "bsod",
+      actionDesc: "BSOD çözüm adımları maili gönderildi",
+      textFn: (rows) => `BSOD raporu: ${rows.length} olay, ${new Set(rows.map((r) => r.hostShort)).size} cihaz. Ayrıntı ve çözüm adımları HTML gövdededir.`,
     });
-    showToast(ok ? `✅ BSOD çözüm maili gönderildi (${to})` : `❌ Gönderilemedi — ${message}`);
   };
 
-  // LAKESIDE Battery Health — düşük sağlıklı bataryalar için bildirim maili (BSOD ile aynı desen).
   const handleBatteryMail = async () => {
-    const targetRows = resolveTargetRows();
-    const low = targetRows.filter((r) => r.batteryHealth != null && r.batteryHealth < 80);
-    if (low.length === 0) {
+    const targetRows = resolveTargetRows().filter((r) => r.batteryHealth != null && r.batteryHealth < 80);
+    if (targetRows.length === 0) {
       showToast("Eşik altında (%80) batarya yok — gönderilecek kayıt yok");
       return;
     }
-    let recipients = bsodMailTo.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
-    if (recipients.length === 0) recipients = [...new Set(Object.values(parseMailGroupsText(mailGroupsText)))];
-    if (recipients.length === 0) {
-      showToast("Alıcı yok — üstteki kutuya e-posta girin veya Ayarlar > Lokasyon Mailleri'ni doldurun");
-      return;
-    }
-    const to = recipients.join(", ");
-    const subject = batteryMailSubject(low);
-    let ok = false, message = "";
-    try {
-      const result = await backendClient.sendMail({
-        to,
-        subject,
-        text: `Battery Health: ${low.length} cihazda düşük batarya sağlığı. Ayrıntı HTML gövdededir.`,
-        html: buildBatteryMailHtml(low),
-      });
-      ok = !!result.ok;
-      message = result.message || (ok ? "Gönderildi" : "Gönderilemedi");
-    } catch (err) {
-      message = err.message || "Gönderilemedi";
-    }
-    if (ok) {
-      [...new Set(low.map((r) => r.hostShort))].forEach((h) =>
-        logDeviceAction({ hostname: h, serial: "" }, { type: "Mail", description: "Düşük batarya sağlığı bildirimi gönderildi", mailSubject: subject, user: user?.username || "", reportId: "battery-health", status: "Başarılı" })
-      );
-    }
-    recordMailHistory({
-      id: Date.now(),
-      date: new Date().toLocaleString("tr-TR"),
-      dept: "LakeSide",
-      report: "Battery Health",
-      recipients: ok ? new Set(low.map((r) => r.hostShort)).size : 0,
-      status: ok ? "Başarılı" : "Gönderilemedi",
-      details: [{ location: `${new Set(low.map((r) => r.hostShort)).size} cihaz`, to, count: low.length, ok, message }],
+    return sendLakesideMailByLocation({
+      targetRows,
+      buildHtml: (rows) => buildBatteryMailHtml(rows),
+      subjectFn: batteryMailSubject,
+      reportLabel: "Battery Health",
+      reportId: "battery-health",
+      actionDesc: "Düşük batarya sağlığı bildirimi gönderildi",
+      textFn: (rows) => `Battery Health: ${rows.length} cihazda düşük batarya sağlığı. Ayrıntı HTML gövdededir.`,
     });
-    showToast(ok ? `✅ Batarya bildirimi gönderildi (${to})` : `❌ Gönderilemedi — ${message}`);
   };
 
   const handleMail = async () => {
@@ -2074,6 +2133,11 @@ IT Support`;
       // klasör senkronu kurulmadıysa backend sessizce hata döner, manuel yükleme hâlâ kullanılabilir.
       loadRealThData({ silent: true });
       loadRealMonitorData({ silent: true });
+    }
+    // LAKESIDE BSOD / Battery Health: hostname -> SCCM eşleşmesiyle lokasyon/kullanıcı bilgisi
+    // getirilip mail lokasyon bazlı gönderilebilsin diye SCCM da yüklenir.
+    if (activeReport === "bsod" || activeReport === "battery-health") {
+      loadRealSccmData({ silent: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReport, fileSourceConfig.folderPath]);
@@ -3469,11 +3533,11 @@ IT Support`;
                       : "Henüz TuruncuHat envanteri yüklenmedi — aşağıdan yükleyin"
                     : isBsod
                     ? realBsodMeta
-                      ? `LakeSide BSOD — ${realBsodMeta.fileName} · ${realBsodAll.length} olay. Her stop code için olası neden + ThinkPad / kurumsal imaj çözüm adımları mail taslağına gömülüdür.`
+                      ? `LakeSide BSOD — ${realBsodMeta.fileName} · ${realBsodAll.length} olay · ${bsodRows.filter((r) => r.sccmMatched).length} kayıt SCCM ile eşleşti. Her stop code için neden + ThinkPad/kurumsal çözüm adımları gömülü; mail lokasyon bazlı (SCCM EnvanterLokasyon → Lokasyon Mail Grupları) gönderilir.`
                       : "Henüz Weekly_BSOD Excel'i yüklenmedi — aşağıdan seçin"
                     : isBattery
                     ? realBatteryMeta
-                      ? `LakeSide Battery Health — ${realBatteryMeta.fileName} · ${realBatteryAll.length} cihaz. Eşik: %60 altı "Değişmeli", %80 altı "İzlenmeli".`
+                      ? `LakeSide Battery Health — ${realBatteryMeta.fileName} · ${realBatteryAll.length} cihaz · ${batteryRows.filter((r) => r.sccmMatched).length} kayıt SCCM ile eşleşti. Eşik: %60 altı "Değişmeli", %80 altı "İzlenmeli"; mail lokasyon bazlı gönderilir.`
                       : "Henüz Battery Health Excel'i yüklenmedi — aşağıdan seçin"
                     : usingRealFileData && (usingRealInaktif ? realInaktifMeta : realDiskMeta)
                     ? `Gerçek veri — ${(usingRealInaktif ? realInaktifMeta : realDiskMeta).fileName} (${new Date((usingRealInaktif ? realInaktifMeta : realDiskMeta).modifiedAt).toLocaleString("tr-TR")})`
@@ -3487,7 +3551,7 @@ IT Support`;
                     </label>
                     <input
                       type="text"
-                      placeholder="Mail alıcı(lar) — boşsa lokasyon mail listesi"
+                      placeholder="Eşleşmeyen cihazlar için yedek mail alıcısı (opsiyonel)"
                       value={bsodMailTo}
                       onChange={(e) => setBsodMailTo(e.target.value)}
                       style={{ ...styles.searchInput, border: `1px solid ${pal.line}`, borderRadius: 8, padding: "8px 11px", minWidth: 260, background: pal.fieldBg }}
@@ -3502,7 +3566,7 @@ IT Support`;
                     </label>
                     <input
                       type="text"
-                      placeholder="Mail alıcı(lar) — boşsa lokasyon mail listesi"
+                      placeholder="Eşleşmeyen cihazlar için yedek mail alıcısı (opsiyonel)"
                       value={bsodMailTo}
                       onChange={(e) => setBsodMailTo(e.target.value)}
                       style={{ ...styles.searchInput, border: `1px solid ${pal.line}`, borderRadius: 8, padding: "8px 11px", minWidth: 260, background: pal.fieldBg }}
