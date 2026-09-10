@@ -15,7 +15,7 @@ import { fetchSccmRowsFromFile, mapSccmRow } from "./services/sccmFileService";
 import { mapThRows, fetchThRowsFromFile } from "./services/thFileService";
 import { mapMonitorRows, fetchMonitorRowsFromFile } from "./services/monitorFileService";
 import { mapBsodRows } from "./services/bsodFileService";
-import { mapBatteryRows } from "./services/batteryFileService";
+import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
 import LocationTrendChart from "./components/LocationTrendChart";
@@ -431,6 +431,7 @@ export default function App({ user, onLogout } = {}) {
   const showLastLogon = isZimmet || activeReport === "inaktif" || activeReport === "kullanilmayan";
   const isUnused = activeReport === "kullanilmayan";
   const isBsod = activeReport === "bsod";
+  const isBattery = activeReport === "battery-health";
 
   // İnaktif Cihazlar ve Disk Alanı'nda gerçek dosya yüklendiyse departmanlar Excel'deki
   // "Sahibi Firma" sütunundan türetiliyor — sabit Departman 1/2/3 değil (bkz. konuşma). Sol
@@ -469,14 +470,14 @@ export default function App({ user, onLogout } = {}) {
   // Disk Alanı'nda genel "Cihaz Sahibi/Seri No-Model/Lokasyon" sütunları yerine
   // Hostname / Volume Name / Size / Free Space gösterilir (bkz. konuşma)
   const isDiskReport = activeReport === "disk";
-  const ownerLabel = isDiskReport ? "Hostname" : isUnused ? "Zimmet Sahibi" : isBsod ? "Cihaz" : "Cihaz Sahibi";
-  const serialLabel = isDiskReport ? "Volume Name" : isUnused ? "Seri No / Durum" : isBsod ? "BSOD Kodu" : "Seri No / Model";
+  const ownerLabel = isDiskReport ? "Hostname" : isUnused ? "Zimmet Sahibi" : isBsod || isBattery ? "Cihaz" : "Cihaz Sahibi";
+  const serialLabel = isDiskReport ? "Volume Name" : isUnused ? "Seri No / Durum" : isBsod ? "BSOD Kodu" : isBattery ? "Batarya Sağlığı" : "Seri No / Model";
   const modelLabel = isDiskReport ? "Free Space" : "Model";
-  const locationLabel = isDiskReport ? "Size" : isBsod ? "Crash Tarihi" : "Lokasyon";
+  const locationLabel = isDiskReport ? "Size" : isBsod ? "Crash Tarihi" : isBattery ? "Pil Durumu" : "Lokasyon";
   // owner + serial birlikte: Disk Alanı'nda "serial" (Volume Name) tek başına eşsiz değil
   // (aynı "Windows" birimi yüzlerce cihazda tekrarlanıyor) — hostname eklenmeden aynı anahtar
   // birden fazla satıra düşüp bir tanesini seçince hepsini birden seçili gösteriyordu
-  const rowKeyOf = (r) => (isZimmet || isBsod ? r.rowKey : `${currentDeptKey}|${activeReport}|${r.owner}|${r.serial}`);
+  const rowKeyOf = (r) => (isZimmet || isBsod || isBattery ? r.rowKey : `${currentDeptKey}|${activeReport}|${r.owner}|${r.serial}`);
 
   // Gereksinim #5: kullanıcı listeden 1 ya da daha fazla kayıt SEÇMİŞSE mail SADECE onlara
   // gitmeli, seçim yoksa (mevcut davranış) filtrelenmiş listenin tamamına gidilir. Bu desen
@@ -597,6 +598,8 @@ export default function App({ user, onLogout } = {}) {
     ? zimmetRows
     : isBsod
     ? realBsodAll
+    : isBattery
+    ? realBatteryAll
     : isUnused
     ? (activeCompany === "all" ? unusedDeviceRows : unusedDeviceRows.filter((r) => r.company === activeCompany))
     : usingRealInaktif
@@ -928,6 +931,19 @@ export default function App({ user, onLogout } = {}) {
           "Çözüm Adımları": (kb.actions || []).map((a, i) => `${i + 1}. ${a}`).join("  |  "),
         };
       });
+    }
+    if (isBattery) {
+      return rows.map((r) => ({
+        "Cihaz": r.hostShort || r.hostname || "",
+        "Hostname (tam)": r.hostname || "",
+        "Batarya Sağlığı %": r.batteryHealth != null ? r.batteryHealth : "Veri Yok",
+        "Döngü Sayısı": r.cycleCount != null ? r.cycleCount : "",
+        "Tasarım Kapasitesi": r.designCapacity != null ? r.designCapacity : "",
+        "Tam Şarj Kapasitesi": r.fullChargeCapacity != null ? r.fullChargeCapacity : "",
+        "Pil Durumu": r.batteryStatus || "",
+        "Üretici": r.manufacturer || "",
+        "Değerlendirme": r.durum || "",
+      }));
     }
     return rows.map((r) => ({
       "Cihaz Sahibi": r.owner,
@@ -1453,6 +1469,52 @@ IT Support`;
     showToast(ok ? `✅ BSOD çözüm maili gönderildi (${to})` : `❌ Gönderilemedi — ${message}`);
   };
 
+  // LAKESIDE Battery Health — düşük sağlıklı bataryalar için bildirim maili (BSOD ile aynı desen).
+  const handleBatteryMail = async () => {
+    const targetRows = resolveTargetRows();
+    const low = targetRows.filter((r) => r.batteryHealth != null && r.batteryHealth < 80);
+    if (low.length === 0) {
+      showToast("Eşik altında (%80) batarya yok — gönderilecek kayıt yok");
+      return;
+    }
+    let recipients = bsodMailTo.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
+    if (recipients.length === 0) recipients = [...new Set(Object.values(parseMailGroupsText(mailGroupsText)))];
+    if (recipients.length === 0) {
+      showToast("Alıcı yok — üstteki kutuya e-posta girin veya Ayarlar > Lokasyon Mailleri'ni doldurun");
+      return;
+    }
+    const to = recipients.join(", ");
+    const subject = batteryMailSubject(low);
+    let ok = false, message = "";
+    try {
+      const result = await backendClient.sendMail({
+        to,
+        subject,
+        text: `Battery Health: ${low.length} cihazda düşük batarya sağlığı. Ayrıntı HTML gövdededir.`,
+        html: buildBatteryMailHtml(low),
+      });
+      ok = !!result.ok;
+      message = result.message || (ok ? "Gönderildi" : "Gönderilemedi");
+    } catch (err) {
+      message = err.message || "Gönderilemedi";
+    }
+    if (ok) {
+      [...new Set(low.map((r) => r.hostShort))].forEach((h) =>
+        logDeviceAction({ hostname: h, serial: "" }, { type: "Mail", description: "Düşük batarya sağlığı bildirimi gönderildi", mailSubject: subject, user: user?.username || "", reportId: "battery-health", status: "Başarılı" })
+      );
+    }
+    recordMailHistory({
+      id: Date.now(),
+      date: new Date().toLocaleString("tr-TR"),
+      dept: "LakeSide",
+      report: "Battery Health",
+      recipients: ok ? new Set(low.map((r) => r.hostShort)).size : 0,
+      status: ok ? "Başarılı" : "Gönderilemedi",
+      details: [{ location: `${new Set(low.map((r) => r.hostShort)).size} cihaz`, to, count: low.length, ok, message }],
+    });
+    showToast(ok ? `✅ Batarya bildirimi gönderildi (${to})` : `❌ Gönderilemedi — ${message}`);
+  };
+
   const handleMail = async () => {
     const deptName = currentDeptLabel;
     const reportName = REPORT_TYPES.find((r) => r.id === activeReport).name;
@@ -1465,6 +1527,9 @@ IT Support`;
     }
     if (isBsod) {
       return handleBsodMail();
+    }
+    if (isBattery) {
+      return handleBatteryMail();
     }
 
     const targetRows = resolveTargetRows();
@@ -3201,10 +3266,10 @@ IT Support`;
                 <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
                   <p style={styles.formLabel}>LAKESIDE — Battery Health Raporu</p>
                   <p style={styles.formHelper}>
-                    LakeSide'ın batarya sağlığı Excel'ini seçin (TuruncuHat / Monitor / BSOD ile aynı şekilde —
-                    dosya tarayıcıda okunur, klasör yolu gerekmez). Cihaz Genel Görünüm'deki "Batarya" kartı
-                    hostname eşleşmesiyle otomatik dolar (sağlık %, döngü sayısı, durum). Kolon adları
-                    tanınamazsa kayıt boş kalır, uygulama hata vermez.
+                    LakeSide'ın batarya sağlığı Excel'ini seçin (BSOD ile aynı şekilde — dosya tarayıcıda okunur,
+                    klasör yolu gerekmez). LAKESIDE → <strong>Battery Health</strong> raporunda listelenir; Cihaz
+                    Genel Görünüm'deki "Batarya" kartı da hostname eşleşmesiyle otomatik dolar. Aynı seçim rapor
+                    ekranındaki "Battery Health Excel Seç…" butonuyla da yapılabilir.
                   </p>
                   <label style={{ ...styles.btnGhost, cursor: "pointer", display: "inline-flex", marginTop: 8 }}>
                     Battery Health *.xlsx Seç…
@@ -3406,6 +3471,10 @@ IT Support`;
                     ? realBsodMeta
                       ? `LakeSide BSOD — ${realBsodMeta.fileName} · ${realBsodAll.length} olay. Her stop code için olası neden + ThinkPad / kurumsal imaj çözüm adımları mail taslağına gömülüdür.`
                       : "Henüz Weekly_BSOD Excel'i yüklenmedi — aşağıdan seçin"
+                    : isBattery
+                    ? realBatteryMeta
+                      ? `LakeSide Battery Health — ${realBatteryMeta.fileName} · ${realBatteryAll.length} cihaz. Eşik: %60 altı "Değişmeli", %80 altı "İzlenmeli".`
+                      : "Henüz Battery Health Excel'i yüklenmedi — aşağıdan seçin"
                     : usingRealFileData && (usingRealInaktif ? realInaktifMeta : realDiskMeta)
                     ? `Gerçek veri — ${(usingRealInaktif ? realInaktifMeta : realDiskMeta).fileName} (${new Date((usingRealInaktif ? realInaktifMeta : realDiskMeta).modifiedAt).toLocaleString("tr-TR")})`
                     : "Sahte veri ile demo · gerçek API bağlandığında burası canlı veriyle güncellenecek"}
@@ -3415,6 +3484,21 @@ IT Support`;
                     <label style={{ ...styles.chipToggle, display: "inline-flex", cursor: "pointer" }}>
                       📄 Weekly_BSOD Excel Seç…
                       <input type="file" accept=".xlsx" onChange={handleManualBsodFile} style={{ display: "none" }} />
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Mail alıcı(lar) — boşsa lokasyon mail listesi"
+                      value={bsodMailTo}
+                      onChange={(e) => setBsodMailTo(e.target.value)}
+                      style={{ ...styles.searchInput, border: `1px solid ${pal.line}`, borderRadius: 8, padding: "8px 11px", minWidth: 260, background: pal.fieldBg }}
+                    />
+                  </div>
+                )}
+                {isBattery && (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                    <label style={{ ...styles.chipToggle, display: "inline-flex", cursor: "pointer" }}>
+                      📄 Battery Health Excel Seç…
+                      <input type="file" accept=".xlsx" onChange={handleManualBatteryFile} style={{ display: "none" }} />
                     </label>
                     <input
                       type="text"
@@ -3455,7 +3539,7 @@ IT Support`;
                     <span style={styles.statNum}>{rawRows.length}</span>
                     <span style={styles.statLabel}>toplam kayıt</span>
                   </div>
-                  {!isUnused && !isBsod && (
+                  {!isUnused && !isBsod && !isBattery && (
                   <div
                     style={{ ...styles.stat, ...styles.statClickable, ...(segment === "matched" ? styles.statActive : {}) }}
                     onClick={() => setSegment("matched")}
@@ -3465,7 +3549,7 @@ IT Support`;
                     <span style={styles.statLabel}>{isZimmet ? "zimmet doğru" : "eşleşen"}</span>
                   </div>
                   )}
-                  {!isUnused && !isBsod && (
+                  {!isUnused && !isBsod && !isBattery && (
                   <div
                     style={{ ...styles.stat, ...styles.statClickable, ...(segment === "unmatched" ? styles.statActive : {}) }}
                     onClick={() => setSegment("unmatched")}
@@ -3473,6 +3557,18 @@ IT Support`;
                   >
                     <span style={{ ...styles.statNum, color: pal.bad }}>{unmatchedCount}</span>
                     <span style={styles.statLabel}>{isZimmet ? "zimmet hatalı" : "eşleşmeyen"}</span>
+                  </div>
+                  )}
+                  {isBattery && (
+                  <div style={styles.stat}>
+                    <span style={{ ...styles.statNum, color: pal.bad }}>{rawRows.filter((r) => r.batteryHealth != null && r.batteryHealth < 60).length}</span>
+                    <span style={styles.statLabel}>değişmeli (&lt;%60)</span>
+                  </div>
+                  )}
+                  {isBattery && (
+                  <div style={styles.stat}>
+                    <span style={{ ...styles.statNum, color: pal.warnFg || pal.bad }}>{rawRows.filter((r) => r.batteryHealth != null && r.batteryHealth >= 60 && r.batteryHealth < 80).length}</span>
+                    <span style={styles.statLabel}>izlenmeli (&lt;%80)</span>
                   </div>
                   )}
                   {isBsod && (
@@ -3598,7 +3694,7 @@ IT Support`;
                       { id: "all", label: "Tümü" },
                       // Kullanılmayan Cihazlar'da her satır zaten "kullanılmıyor" (matched:false) —
                       // Eşleşen/Eşleşmeyen ayrımı anlamsız, gösterilmez.
-                      ...(isUnused || isBsod ? [] : [
+                      ...(isUnused || isBsod || isBattery ? [] : [
                         { id: "matched", label: isZimmet ? "Zimmet Doğru" : "Eşleşen" },
                         { id: "unmatched", label: isZimmet ? "Zimmet Hatalı" : "Eşleşmeyen" },
                       ]),
@@ -3812,6 +3908,10 @@ IT Support`;
                       : isBsod
                       ? realBsodMeta
                         ? `Gerçek veri: ${realBsodMeta.fileName}`
+                        : "Dosya seçilmedi"
+                      : isBattery
+                      ? realBatteryMeta
+                        ? `Gerçek veri: ${realBatteryMeta.fileName}`
                         : "Dosya seçilmedi"
                       : usingRealFileData && (usingRealInaktif ? realInaktifMeta : realDiskMeta)
                       ? `Gerçek veri: ${(usingRealInaktif ? realInaktifMeta : realDiskMeta).fileName}`

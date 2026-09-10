@@ -41,6 +41,10 @@ export function mapBatteryRow(raw) {
   const status = norm(col(raw, "Battery Status", "Status", "Condition", "Durum", "Pil Durumu"));
   const manufacturer = norm(col(raw, "Manufacturer", "Battery Manufacturer", "Üretici", "Marka"));
   const serial = norm(col(raw, "Battery Serial", "Serial Number", "SerialNumber", "Seri No"));
+  const model = norm(col(raw, "Model", "Device Model", "Battery Name", "Name"));
+
+  // Kurumsal eşik: <60 kritik (değişmeli), <80 uyarı (izlenmeli), ≥80 iyi.
+  const durum = health == null ? "Veri Yok" : health < 60 ? "Değişmeli" : health < 80 ? "İzlenmeli" : "İyi";
 
   return {
     hostname: machine,
@@ -51,7 +55,21 @@ export function mapBatteryRow(raw) {
     fullChargeCapacity: full,
     batteryStatus: status,
     manufacturer,
-    serial,
+    batterySerial: serial,
+    deviceModel: model,
+    durum,
+    // Genel liste bileşenleriyle (TableView vb.) uyum — serial/model görüntüleme amaçlı
+    rowKey: `battery|${machine}|${serial}`,
+    owner: shortHost(machine),
+    serial: health != null ? `%${health}` : "Veri Yok",
+    model: [durum, cycles != null ? `${cycles} döngü` : ""].filter(Boolean).join(" · "),
+    sub: manufacturer || model || "",
+    location: status || "—",
+    lbsParent: "",
+    company: "",
+    office: status || "—",
+    matched: health != null && health >= 80,
+    statusTag: durum,
     _raw: raw,
   };
 }
@@ -73,6 +91,40 @@ export function findBattery(batteryRows, query) {
     batteryRows.find((r) => r.hostShort.toLowerCase().includes(qShort) || qShort.includes(r.hostShort.toLowerCase())) ||
     null
   );
+}
+
+const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// Battery Health raporu için mail gövdesi — "Değişmeli" ve "İzlenmeli" cihazlar iki tabloda.
+export function buildBatteryMailHtml(rows = []) {
+  const replace = rows.filter((r) => r.batteryHealth != null && r.batteryHealth < 60);
+  const watch = rows.filter((r) => r.batteryHealth != null && r.batteryHealth >= 60 && r.batteryHealth < 80);
+  const table = (list) => {
+    const head = ["Cihaz", "Sağlık %", "Döngü", "Pil Durumu", "Üretici"];
+    const body = list
+      .map((r) => {
+        const c = [r.hostShort || r.hostname, r.batteryHealth != null ? `%${r.batteryHealth}` : "Veri Yok", r.cycleCount ?? "—", r.batteryStatus || "—", r.manufacturer || "—"];
+        return `<tr>${c.map((x) => `<td style="border:1px solid #ccc;padding:6px 8px;">${esc(x)}</td>`).join("")}</tr>`;
+      })
+      .join("");
+    return `<table style="border-collapse:collapse;width:100%;font-size:13px;margin:6px 0 14px;"><thead><tr style="background:#f0f0f0;">${head
+      .map((h) => `<th style="border:1px solid #ccc;padding:6px 8px;text-align:left;">${h}</th>`)
+      .join("")}</tr></thead><tbody>${body}</tbody></table>`;
+  };
+  let b = `<p>Merhabalar,</p><p>LakeSide Battery Health raporunda aşağıdaki cihazlarda batarya sağlığı düşük görünüyor.</p>`;
+  if (replace.length)
+    b += `<p><strong>%60 altı — batarya değişimi önerilir (${replace.length} cihaz):</strong> Bu cihazlar için Lenovo garanti/servis üzerinden batarya değişimi başlatılmalıdır.</p>${table(replace)}`;
+  if (watch.length)
+    b += `<p><strong>%60–%80 arası — izlenmeli (${watch.length} cihaz):</strong> Şarj süresi belirgin kısaldıysa değişim planlanmalı; aksi halde bir sonraki raporda tekrar değerlendirilecek.</p>${table(watch)}`;
+  if (!replace.length && !watch.length) b += `<p>Eşik altında cihaz bulunmuyor.</p>`;
+  b += `<p>Cihazların güncel durumu (değiştirildi / kullanımda / iade) hakkında bilgi verilmesini rica ederiz.</p>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55;">${b}</div>`;
+}
+
+export function batteryMailSubject(rows = []) {
+  const n = rows.filter((r) => r.batteryHealth != null && r.batteryHealth < 80).length;
+  return n ? `LakeSide Battery Health — ${n} cihazda düşük batarya sağlığı` : "LakeSide Battery Health — rapor";
 }
 
 // health -> {value, state}  (ok / warn / crit / none) — kurumsal eşik: <60 kritik, <80 uyarı
