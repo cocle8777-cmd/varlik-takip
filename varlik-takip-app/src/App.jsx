@@ -3417,8 +3417,12 @@ IT Support`;
                   <div style={styles.segmented}>
                     {[
                       { id: "all", label: "Tümü" },
-                      { id: "matched", label: isZimmet ? "Zimmet Doğru" : "Eşleşen" },
-                      { id: "unmatched", label: isZimmet ? "Zimmet Hatalı" : "Eşleşmeyen" },
+                      // Kullanılmayan Cihazlar'da her satır zaten "kullanılmıyor" (matched:false) —
+                      // Eşleşen/Eşleşmeyen ayrımı anlamsız, gösterilmez.
+                      ...(isUnused ? [] : [
+                        { id: "matched", label: isZimmet ? "Zimmet Doğru" : "Eşleşen" },
+                        { id: "unmatched", label: isZimmet ? "Zimmet Hatalı" : "Eşleşmeyen" },
+                      ]),
                       // Gereksinim: "bunu raporda ayırabilmem gerekiyor" — TH+Monitor Raporu
                       // yüklüyse, sadece KESİN monitör uyuşmazlığı tespit edilen satırları ayrı
                       // görebilmek için. Sadece TH'de kaydı olmayan (doğrulanamayan) monitörler
@@ -3621,6 +3625,10 @@ IT Support`;
                     {isZimmet
                       ? realSccmMeta
                         ? `Gerçek veri: ${realSccmMeta.fileName}`
+                        : "Sahte veri (demo)"
+                      : isUnused
+                      ? realThMeta
+                        ? `Gerçek veri: ${realThMeta.fileName}${realSccmMeta ? ` + ${realSccmMeta.fileName}` : ""}`
                         : "Sahte veri (demo)"
                       : usingRealFileData && (usingRealInaktif ? realInaktifMeta : realDiskMeta)
                       ? `Gerçek veri: ${(usingRealInaktif ? realInaktifMeta : realDiskMeta).fileName}`
