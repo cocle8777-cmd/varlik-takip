@@ -11,17 +11,21 @@ const { readSection, writeSection } = require("../store");
 const router = express.Router();
 const SECTION = "yeniKurulumlar"; // { records: [...], excelPath: "..." }
 
-// Excel sütun sırası = form alanları
+// Excel sütun sırası = form alanları (kullanıcının gerçek Excel başlıkları — bkz. konuşma)
 const COLUMNS = [
-  ["installDate", "Kurulum Tarihi"],
-  ["hostname", "Hostname"],
-  ["serial", "Seri No"],
-  ["model", "Cihaz Modeli"],
-  ["user", "Kullanıcı"],
-  ["userMail", "Kullanıcı E-posta"],
-  ["location", "Lokasyon"],
-  ["installer", "Kuran Kişi"],
-  ["notes", "Notlar"],
+  ["serial", "SERİ NO"],
+  ["hostname", "HOSTNAME"],
+  ["model", "MODEL"],
+  ["location", "LOKASYON"],
+  ["userInfo", "KULLANICI BİLGİSİ"],
+  ["atoNo", "ATO NUMARASI"],
+  ["date", "TARİH"],
+  ["bitlocker", "Bitlocker Kontrol"],
+  ["processedBy", "İŞLEM YAPAN"],
+  ["status", "DURUM"],
+  ["deliveryDate", "TESLİM TARİHİ"],
+  ["reason", "NEDENI"],
+  ["returns", "İADELER"],
 ];
 // Türetilmiş Excel sütunu — mail gönderildiyse 1, gönderilmediyse 0.
 const MAIL_COL = "Mail Gönderildi";
@@ -133,7 +137,7 @@ router.post("/sync-excel", (req, res) => {
     // Sistemde OLMAYAN (dosyada elle eklenmiş) satırları da koru — seri no + hostname anahtarıyla
     const sysKeys = new Set(state.records.map((r) => `${r.serial}|${r.hostname}`.toLowerCase()));
     const keptManual = existingRows.filter((row) => {
-      const key = `${row["Seri No"] || ""}|${row["Hostname"] || ""}`.toLowerCase();
+      const key = `${row["SERİ NO"] || row["Seri No"] || ""}|${row["HOSTNAME"] || row["Hostname"] || ""}`.toLowerCase();
       return key !== "|" && !sysKeys.has(key);
     }).map((row) => ({ ...row, [MAIL_COL]: row[MAIL_COL] === 1 || row[MAIL_COL] === "1" ? 1 : 0 }));
 

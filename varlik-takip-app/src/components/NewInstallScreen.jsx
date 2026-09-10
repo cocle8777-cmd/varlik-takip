@@ -4,26 +4,31 @@ import { backendClient } from "../services/backendClient";
 // "Yeni Kurulum Kaydı" (demo) — formdan kayıt → sistemde saklama → mevcut Excel'e satır ekleme
 // → mail hazırlama/gönderme. Bkz. konuşma: 2. adım A seçeneği (mevcut dosyaya ekleme), demoda
 // dosya "varmış gibi" (backend YeniKurulumlar-DEMO.xlsx'i okuyup satır ekler).
+// Kullanıcının gerçek Excel başlıkları (bkz. konuşma)
 const FIELDS = [
-  { k: "installDate", label: "Kurulum Tarihi", type: "date" },
-  { k: "hostname", label: "Hostname" },
-  { k: "serial", label: "Seri No" },
-  { k: "model", label: "Cihaz Modeli" },
-  { k: "user", label: "Kullanıcı" },
-  { k: "userMail", label: "Kullanıcı E-posta", type: "email" },
-  { k: "location", label: "Lokasyon" },
-  { k: "installer", label: "Kuran Kişi" },
-  { k: "notes", label: "Notlar", wide: true },
+  { k: "serial", label: "SERİ NO" },
+  { k: "hostname", label: "HOSTNAME" },
+  { k: "model", label: "MODEL" },
+  { k: "location", label: "LOKASYON" },
+  { k: "userInfo", label: "KULLANICI BİLGİSİ" },
+  { k: "atoNo", label: "ATO NUMARASI" },
+  { k: "date", label: "TARİH", type: "date" },
+  { k: "bitlocker", label: "Bitlocker Kontrol" },
+  { k: "processedBy", label: "İŞLEM YAPAN" },
+  { k: "status", label: "DURUM" },
+  { k: "deliveryDate", label: "TESLİM TARİHİ", type: "date" },
+  { k: "reason", label: "NEDENI", wide: true },
+  { k: "returns", label: "İADELER", wide: true },
 ];
 
 const today = () => new Date().toISOString().slice(0, 10);
-const emptyForm = (installer) => Object.fromEntries(FIELDS.map((f) => [f.k, f.k === "installDate" ? today() : f.k === "installer" ? installer || "" : ""]));
+const emptyForm = (who) => Object.fromEntries(FIELDS.map((f) => [f.k, f.k === "date" ? today() : f.k === "processedBy" ? who || "" : ""]));
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function buildMailHtml(recs) {
-  const head = ["Kurulum Tarihi", "Hostname", "Seri No", "Cihaz Modeli", "Kullanıcı", "Lokasyon", "Kuran Kişi"];
-  const keys = ["installDate", "hostname", "serial", "model", "user", "location", "installer"];
+  const head = ["SERİ NO", "HOSTNAME", "MODEL", "LOKASYON", "KULLANICI BİLGİSİ", "ATO NUMARASI", "TARİH", "İŞLEM YAPAN", "DURUM"];
+  const keys = ["serial", "hostname", "model", "location", "userInfo", "atoNo", "date", "processedBy", "status"];
   const body = recs
     .map((r) => `<tr>${keys.map((k) => `<td style="border:1px solid #ccc;padding:6px 8px;">${esc(r[k])}</td>`).join("")}</tr>`)
     .join("");
@@ -291,7 +296,7 @@ export default function NewInstallScreen({ styles, pal, user, mailGroupsText, re
                       <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} style={styles.checkbox} />
                     </td>
                     {FIELDS.map((f) => (
-                      <td key={f.k} style={{ ...styles.td, fontSize: 12.5, whiteSpace: f.k === "notes" ? "normal" : "nowrap" }}>
+                      <td key={f.k} style={{ ...styles.td, fontSize: 12.5, whiteSpace: f.wide ? "normal" : "nowrap" }}>
                         {r[f.k] || <span style={{ color: pal.inkSoft }}>—</span>}
                       </td>
                     ))}
