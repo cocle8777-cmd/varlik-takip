@@ -27,20 +27,41 @@ const emptyForm = (who) => Object.fromEntries(FIELDS.map((f) => [f.k, f.k === "d
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-function buildMailHtml(recs) {
-  const head = ["SERİ NO", "HOSTNAME", "MODEL", "LOKASYON", "KULLANICI BİLGİSİ", "ATO NUMARASI", "TARİH", "İŞLEM YAPAN", "DURUM"];
-  const keys = ["serial", "hostname", "model", "location", "userInfo", "atoNo", "date", "processedBy", "status"];
+// Mail gövdesi — kullanıcının verdiği şablona birebir (bkz. konuşma).
+// Tablo sütunları: Seri Numarası · Barkod · Model · Marka · Varlık Kataloğu · Varlık Transfer Emri
+// Barkod/Marka form'da yok → seri no ile TuruncuHat'tan doldurulur. Varlık Transfer Emri = ATO NUMARASI.
+function buildMailHtml(recs, thRows = []) {
+  const thBySerial = new Map();
+  thRows.forEach((t) => {
+    const k = String(t.serial || "").trim().toLowerCase();
+    if (k) thBySerial.set(k, t);
+  });
+  const head = ["Seri Numarası", "Barkod", "Model", "Marka", "Varlık Kataloğu", "Varlık Transfer Emri"];
   const body = recs
-    .map((r) => `<tr>${keys.map((k) => `<td style="border:1px solid #ccc;padding:6px 8px;">${esc(r[k])}</td>`).join("")}</tr>`)
+    .map((r) => {
+      const th = thBySerial.get(String(r.serial || "").trim().toLowerCase());
+      const cells = [
+        r.serial || "",
+        (th && th.barkod) || "",
+        r.model || (th && th.model) || "",
+        (th && th.marka) || "",
+        r.assetCatalog || "",
+        r.atoNo || "",
+      ];
+      return `<tr>${cells.map((c) => `<td style="border:1px solid #000;padding:6px 10px;">${esc(c)}</td>`).join("")}</tr>`;
+    })
     .join("");
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55;">
-    <p>Merhabalar,</p>
-    <p>Aşağıdaki cihaz(lar)ın kurulumu tamamlanmış ve kullanıcı(lar)ına teslim edilmiştir:</p>
-    <table style="border-collapse:collapse;width:100%;font-size:13px;margin:6px 0 14px;">
-      <thead><tr style="background:#f0f0f0;">${head.map((h) => `<th style="border:1px solid #ccc;padding:6px 8px;text-align:left;">${h}</th>`).join("")}</tr></thead>
+  return `<div style="font-family:Calibri,Arial,Helvetica,sans-serif;font-size:14px;color:#000;line-height:1.55;">
+    <p>Merhaba,</p>
+    <p>Cihazınız hazırlanmıştır. ATO kaydına Turuncuhattan kapatma onayı vermeniz durumunda&nbsp; bizden teslim alabilirsiniz.</p>
+    <table style="border-collapse:collapse;margin:10px 0 14px;">
+      <thead><tr>${head
+        .map((h) => `<th style="border:1px solid #000;padding:6px 10px;text-align:left;color:#C00000;font-weight:bold;white-space:nowrap;">${h}</th>`)
+        .join("")}</tr></thead>
       <tbody>${body}</tbody>
     </table>
-    <p>Cihaz zimmet ve envanter kayıtlarının güncellenmesi için bilginize sunulur.</p>
+    <p>Adres: <strong>EBİ- Corporate Club binası</strong> (Atatürk Uluslararası Havalimanı B Kapısı , (Eğitim Akademisi, Merkez yemekhane yanı))</p>
+    <p>Konum : <a href="https://goo.gl/maps/boaRCuAx7Qu">https://goo.gl/maps/boaRCuAx7Qu</a></p>
   </div>`;
 }
 
@@ -181,14 +202,14 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
       return;
     }
     const to = recipients.join(", ");
-    const subject = `Yeni Kurulum Bildirimi — ${targetRecs.length} cihaz`;
+    const subject = targetRecs.length === 1 ? "Cihazınız Hazır — ATO Kapatma Onayı" : `Cihazlarınız Hazır — ATO Kapatma Onayı (${targetRecs.length} cihaz)`;
     setMailBusy(true);
     try {
       const r = await backendClient.sendMail({
         to,
         subject,
-        text: `${targetRecs.length} cihazın kurulumu tamamlandı. Ayrıntı HTML gövdededir.`,
-        html: buildMailHtml(targetRecs),
+        text: "Cihazınız hazırlanmıştır. ATO kaydına Turuncuhattan kapatma onayı vermeniz durumunda bizden teslim alabilirsiniz. Adres: EBİ- Corporate Club binası. Konum: https://goo.gl/maps/boaRCuAx7Qu",
+        html: buildMailHtml(targetRecs, thRows),
       });
       const ok = !!r.ok;
       if (ok) {
