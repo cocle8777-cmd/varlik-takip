@@ -4,18 +4,19 @@ import { backendClient } from "../services/backendClient";
 // "Yeni Kurulum Kaydı" (demo) — formdan kayıt → sistemde saklama → mevcut Excel'e satır ekleme
 // → mail hazırlama/gönderme. Bkz. konuşma: 2. adım A seçeneği (mevcut dosyaya ekleme), demoda
 // dosya "varmış gibi" (backend YeniKurulumlar-DEMO.xlsx'i okuyup satır ekler).
-// Kullanıcının gerçek Excel başlıkları (bkz. konuşma)
+// Kullanıcının gerçek Excel başlıkları (bkz. konuşma). options = sabit açılır liste;
+// options: "LOCATIONS" = App.jsx'ten gelen mevcut lokasyon listesi.
 const FIELDS = [
   { k: "serial", label: "SERİ NO" },
   { k: "hostname", label: "HOSTNAME" },
   { k: "model", label: "MODEL" },
-  { k: "location", label: "LOKASYON" },
+  { k: "location", label: "LOKASYON", options: "LOCATIONS" },
   { k: "userInfo", label: "KULLANICI BİLGİSİ" },
   { k: "atoNo", label: "ATO NUMARASI" },
   { k: "date", label: "TARİH", type: "date" },
-  { k: "bitlocker", label: "Bitlocker Kontrol" },
+  { k: "bitlocker", label: "Bitlocker Kontrol", options: ["Enable", "Süreç devam ediyor"] },
   { k: "processedBy", label: "İŞLEM YAPAN" },
-  { k: "status", label: "DURUM" },
+  { k: "status", label: "DURUM", options: ["Teslim edildi", "Hazırlandı"] },
   { k: "deliveryDate", label: "TESLİM TARİHİ", type: "date" },
   { k: "reason", label: "NEDENI", wide: true },
   { k: "returns", label: "İADELER", wide: true },
@@ -43,7 +44,7 @@ function buildMailHtml(recs) {
   </div>`;
 }
 
-export default function NewInstallScreen({ styles, pal, user, mailGroupsText, recordMailHistory, showToast }) {
+export default function NewInstallScreen({ styles, pal, user, locationOptions = [], mailGroupsText, recordMailHistory, showToast }) {
   const [records, setRecords] = useState([]);
   const [excelPath, setExcelPath] = useState("");
   const [form, setForm] = useState(() => emptyForm(user?.username));
@@ -209,18 +210,31 @@ export default function NewInstallScreen({ styles, pal, user, mailGroupsText, re
           )}
         </div>
         <form onSubmit={submit} style={styles.formGrid}>
-          {FIELDS.map((f) => (
-            <div key={f.k} style={f.wide ? styles.formFieldWide : styles.formField}>
-              <label style={styles.formLabel}>{f.label}</label>
-              <input
-                type={f.type || "text"}
-                value={form[f.k]}
-                onChange={(e) => setF(f.k, e.target.value)}
-                style={inp}
-                placeholder={f.k === "hostname" ? "THY-LAP-…" : f.k === "serial" ? "PF3…" : ""}
-              />
-            </div>
-          ))}
+          {FIELDS.map((f) => {
+            const opts = f.options === "LOCATIONS" ? locationOptions : Array.isArray(f.options) ? f.options : null;
+            return (
+              <div key={f.k} style={f.wide ? styles.formFieldWide : styles.formField}>
+                <label style={styles.formLabel}>{f.label}</label>
+                {opts && opts.length > 0 ? (
+                  <select value={form[f.k]} onChange={(e) => setF(f.k, e.target.value)} style={{ ...inp }}>
+                    <option value="">— seçiniz —</option>
+                    {opts.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                    {form[f.k] && !opts.includes(form[f.k]) && <option value={form[f.k]}>{form[f.k]}</option>}
+                  </select>
+                ) : (
+                  <input
+                    type={f.type || "text"}
+                    value={form[f.k]}
+                    onChange={(e) => setF(f.k, e.target.value)}
+                    style={inp}
+                    placeholder={f.k === "hostname" ? "THY-LAP-…" : f.k === "serial" ? "PF3…" : ""}
+                  />
+                )}
+              </div>
+            );
+          })}
           <div style={{ ...styles.formActions, gridColumn: "1 / -1" }}>
             <button type="submit" style={styles.btnPrimary} disabled={saving}>
               {saving ? "Kaydediliyor…" : editingId ? "Güncelle" : "Kaydet"}

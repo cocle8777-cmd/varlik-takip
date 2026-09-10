@@ -491,6 +491,16 @@ export default function App({ user, onLogout } = {}) {
   const bsodRows = useMemo(() => (realBsodAll.length ? enrichWithSccm(realBsodAll, { setLocationColumn: true }) : []), [realBsodAll, sccmByHostname]);
   const batteryRows = useMemo(() => (realBatteryAll.length ? enrichWithSccm(realBatteryAll) : []), [realBatteryAll, sccmByHostname]);
 
+  // Yeni Kurulum Kaydı formundaki LOKASYON açılır listesi — mevcut verideki lokasyonlar.
+  const installLocations = useMemo(() => {
+    const s = new Set();
+    [...realSccmAll, ...realThAll, ...realInaktifAll].forEach((r) => {
+      const l = (r.location || "").trim();
+      if (l && l !== "—") s.add(l);
+    });
+    return Array.from(s).sort((a, b) => a.localeCompare(b, "tr"));
+  }, [realSccmAll, realThAll, realInaktifAll]);
+
   const inaktifCompanies = useMemo(() => {
     if (!hasRealCompanies) return [];
     const set = new Set([...realInaktifAll, ...realDiskAll, ...unusedDeviceRows].map((r) => r.company).filter(Boolean));
@@ -2142,6 +2152,11 @@ IT Support`;
     if (activeReport === "bsod" || activeReport === "battery-health") {
       loadRealSccmData({ silent: true });
     }
+    // Yeni Kurulum Kaydı formundaki LOKASYON listesi için mevcut lokasyonlar SCCM/TH'den derlenir.
+    if (activeReport === "yeni-kurulum") {
+      loadRealSccmData({ silent: true });
+      loadRealThData({ silent: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReport, fileSourceConfig.folderPath]);
 
@@ -3529,6 +3544,7 @@ IT Support`;
               styles={styles}
               pal={pal}
               user={user}
+              locationOptions={installLocations}
               mailGroupsText={mailGroupsText}
               recordMailHistory={recordMailHistory}
               showToast={showToast}
