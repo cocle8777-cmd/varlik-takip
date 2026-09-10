@@ -54,6 +54,9 @@ export function mapThRow(raw) {
     location: location || "—",
     lbsParent: col(raw, "LBS Location Parent"),
     company: col(raw, "Sahibi Firma"),
+    // Madde 8 — cihaz yaşı için yedek tarih: SCCM'de "BIOS Date" boş kalırsa TuruncuHat'taki
+    // garanti başlangıç tarihi kullanılır (gerçek export'ta her kayıtta dolu — kullanıcı teyidi).
+    warrantyStartDate: col(raw, "Garanti Başlangıç Tarihi", "Garanti Baslangic Tarihi", "Garanti Başlangıç", "Warranty Start Date", "WarrantyStartDate"),
     // Ham değer — gerçek dosyada doğrulandı: "User", "Warehouse", "OBS", "Site", "Supplier"
     // (ve boş) olmak üzere 6 farklı değer var. Kullanıcı isteği: "Konum kategorisinde sadece
     // User ve OBS baz alınacak, geri kalanlara ihtiyacımız yok" — bu yüzden burada "User"a

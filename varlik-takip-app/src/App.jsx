@@ -889,10 +889,12 @@ export default function App({ user, onLogout } = {}) {
         "Lokasyon": r.location || "",
         "Cihaz Modeli": r.deviceModel || "",
         "BIOS Date": r.biosDate || "Veri Yok",
+        "Garanti Başlangıç (TH)": r.warrantyStartDate || "Veri Yok",
         "Last Logon": r.lastLogonTime || "Veri Yok",
         "OBS Zimmet Durumu": r.obsStatus || "",
         "SCCM Durumu": r.sccmStatus || "",
         "Cihaz Yaşı": r.deviceAge != null ? `${r.deviceAge} yıl` : "Veri Yok",
+        "Cihaz Yaşı Kaynağı": r.deviceAgeSource || "—",
         "Kullanım Durumu": r.statusTag || r.usageStatus || "",
         "Açıklama": r.model || "",
       }));

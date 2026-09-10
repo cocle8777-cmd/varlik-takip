@@ -154,7 +154,10 @@ export default function TableView({
                 </td>
               )}
               {showDeviceAge && (
-                <td style={{ ...styles.td, fontSize: 12.5, whiteSpace: "nowrap", ...(r.deviceAge != null && r.deviceAge > 5 ? { color: pal.bad, fontWeight: 600 } : {}) }}>
+                <td
+                  style={{ ...styles.td, fontSize: 12.5, whiteSpace: "nowrap", ...(r.deviceAge != null && r.deviceAge > 5 ? { color: pal.bad, fontWeight: 600 } : {}) }}
+                  title={r.deviceAgeSource ? `${r.deviceAgeSource}${r.deviceAgeDate ? ` (${r.deviceAgeDate})` : ""}` : undefined}
+                >
                   {deviceAgeText(r) || <span style={{ color: pal.inkSoft, fontStyle: "italic" }}>Veri Yok</span>}
                 </td>
               )}

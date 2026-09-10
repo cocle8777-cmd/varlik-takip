@@ -7,7 +7,7 @@ const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function deviceTable(rows) {
-  const head = ["Lokasyon", "Hostname", "Seri No", "Model", "BIOS Date", "Cihaz Yaşı", "Last Logon"];
+  const head = ["Lokasyon", "Hostname", "Seri No", "Model", "Üretim / Garanti Tarihi", "Cihaz Yaşı", "Last Logon"];
   const body = rows
     .map((r) => {
       const cells = [
@@ -15,7 +15,7 @@ function deviceTable(rows) {
         r.hostname || "—",
         r.serial || "—",
         r.deviceModel || "—",
-        r.biosDate || "Veri Yok",
+        r.deviceAgeDate || r.biosDate || "Veri Yok",
         r.deviceAge != null ? `${r.deviceAge} yıl` : "Veri Yok",
         r.lastLogonTime || "Veri Yok",
       ];

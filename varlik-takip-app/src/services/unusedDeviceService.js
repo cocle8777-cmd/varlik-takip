@@ -61,7 +61,13 @@ export function computeUnusedDevices({ thRows = [], sccmRows = [], staleDays = D
         reason = staleD != null ? `Son giriş ${staleD} gün önce.` : "Son giriş bilgisi yok.";
       }
 
-      const age = deviceAgeYears(s?.biosDate);
+      // Cihaz yaşı önce SCCM "BIOS Date"ten; o boşsa TuruncuHat "Garanti Başlangıç Tarihi"nden
+      // hesaplanır (kullanıcı: TH'de bu tarih her kayıtta garanti dolu). İkisi de yoksa null.
+      const biosAge = deviceAgeYears(s?.biosDate);
+      const warrantyAge = biosAge == null ? deviceAgeYears(th.warrantyStartDate) : null;
+      const age = biosAge != null ? biosAge : warrantyAge;
+      const ageSource = biosAge != null ? "BIOS Date" : warrantyAge != null ? "TH Garanti Başlangıç" : "";
+      const ageBasisDate = biosAge != null ? (s?.biosDate || "") : warrantyAge != null ? (th.warrantyStartDate || "") : "";
 
       return {
         rowKey: `unused|${th.serial}`,
@@ -79,7 +85,10 @@ export function computeUnusedDevices({ thRows = [], sccmRows = [], staleDays = D
         lastLogonTime: lastLogon || "",
         lastLogonDaysAgo: staleD,
         biosDate: s?.biosDate || "",
+        warrantyStartDate: th.warrantyStartDate || "",
         deviceAge: age,
+        deviceAgeSource: ageSource,
+        deviceAgeDate: ageBasisDate,
         bitlocker: s?.bitlocker || "",
         obsStatus: "OBS Zimmetli",
         sccmStatus: s ? "SCCM'de Kayıtlı" : "SCCM'de Yok",

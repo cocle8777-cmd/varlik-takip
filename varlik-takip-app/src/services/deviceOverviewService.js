@@ -35,7 +35,11 @@ export function buildDeviceOverview(query, { sccmRows = [], thRows = [], monitor
 
   if (!sccm && !th && !inaktif && disksForHost.length === 0) return { notFound: true, query };
 
-  const age = deviceAgeYears(sccm?.biosDate);
+  // Cihaz yaşı: önce SCCM BIOS Date, o boşsa TuruncuHat "Garanti Başlangıç Tarihi".
+  const biosAge = deviceAgeYears(sccm?.biosDate);
+  const warrantyAge = biosAge == null ? deviceAgeYears(th?.warrantyStartDate) : null;
+  const age = biosAge != null ? biosAge : warrantyAge;
+  const ageSource = biosAge != null ? "BIOS Date" : warrantyAge != null ? "TH Garanti Başlangıç" : "";
   const llDays = daysSince(sccm?.lastLogonTime);
   const freeGb = cDrive?.freeSpaceGb;
   const diskClass = cDrive ? classifyDisk(freeGb) : "unknown";
@@ -91,7 +95,10 @@ export function buildDeviceOverview(query, { sccmRows = [], thRows = [], monitor
         group: "Donanım",
         items: [
           { label: "BIOS Date", value: val(sccm?.biosDate), state: sccm?.biosDate ? OK : NONE },
-          { label: "Cihaz Yaşı", value: age != null ? `${age} yıl` : "Veri Yok", state: age == null ? NONE : age > 5 ? CRIT : age > 3 ? WARN : OK },
+          ...(!sccm?.biosDate && th?.warrantyStartDate
+            ? [{ label: "Garanti Başlangıç (TH)", value: th.warrantyStartDate, state: OK, note: "BIOS Date yok — yaş bu tarihten" }]
+            : []),
+          { label: "Cihaz Yaşı", value: age != null ? `${age} yıl` : "Veri Yok", state: age == null ? NONE : age > 5 ? CRIT : age > 3 ? WARN : OK, note: ageSource ? `Kaynak: ${ageSource}` : "" },
           { label: "Batarya", value: "Veri Yok", state: NONE, note: "LakeSide bağlanınca" },
         ],
       },
