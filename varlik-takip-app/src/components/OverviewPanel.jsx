@@ -252,40 +252,42 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
           </div>
         </Card>
 
-        {/* Dönemsel Çözüm Performansı — dönem dönem okunaklı satırlar (LACİVERT) */}
+        {/* Dönemsel Çözüm Performansı — dönem başına PASTA (donut) dilimi (LACİVERT) */}
         <div style={{ flex: "1 1 100%", minWidth: 0 }}>
           <Card title={`${PERIOD_LABELS[period]} Çözüm Performansı`} accent={C.navy}>
             {enough ? (
               <>
-                <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 11.5, color: pal.inkSoft, marginBottom: 10 }}>
-                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.emerald, marginRight: 5 }} />Çözülen (önceki dönemden düştü)</span>
+                <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 12, color: pal.inkSoft, marginBottom: 12 }}>
+                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.emerald, marginRight: 5 }} />Çözülen</span>
                   <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.slate, marginRight: 5 }} />Devam Eden</span>
                   <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.coral, marginRight: 5 }} />Yeni Tespit</span>
+                  <span style={{ marginLeft: "auto" }}>Ortadaki % = çözüm oranı (çözülen ÷ önceki dönemin problemli cihazı)</span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 26, justifyContent: "flex-start" }}>
                   {trendRows.map((p) => {
-                    const tot = p.cozulen + p.devam + p.yeni;
-                    const barW = Math.round((tot / p.maxTotal) * 100);
-                    const seg = (v) => (tot ? `${(v / tot) * 100}%` : "0%");
                     const okColor = p.cozumOrani == null ? pal.inkSoft : p.cozumOrani >= 50 ? C.emerald : p.cozumOrani >= 25 ? C.amber : C.coral;
                     return (
-                      <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <span style={{ width: 70, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{p.label}</span>
-                        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ flex: 1, minWidth: 0, height: 18, borderRadius: 5, background: pal.fieldBg, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${barW}%`, display: "flex", borderRadius: 5, overflow: "hidden" }}>
-                              <div style={{ width: seg(p.cozulen), background: C.emerald }} title={`Çözülen: ${p.cozulen}`} />
-                              <div style={{ width: seg(p.devam), background: C.slate }} title={`Devam Eden: ${p.devam}`} />
-                              <div style={{ width: seg(p.yeni), background: C.coral }} title={`Yeni: ${p.yeni}`} />
-                            </div>
-                          </div>
-                          <span style={{ fontSize: 12, color: pal.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}>
-                            <strong style={{ color: C.emerald }}>{fmt(p.cozulen)}</strong> çöz · <strong>{fmt(p.devam)}</strong> devam · <strong style={{ color: C.coral }}>{fmt(p.yeni)}</strong> yeni
-                          </span>
-                        </div>
-                        <span style={{ width: 92, flexShrink: 0, textAlign: "right" }}>
-                          <span style={{ fontSize: 15, fontWeight: 800, color: okColor, fontFamily: "monospace" }}>{p.cozumOrani != null ? `%${p.cozumOrani}` : "—"}</span>
-                          <span style={{ display: "block", fontSize: 10, color: pal.inkSoft }}>çözüm oranı</span>
+                      <div key={p.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, minWidth: 150 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: pal.ink }}>{p.label}</span>
+                        <Donut
+                          size={150}
+                          thickness={22}
+                          segments={[
+                            { value: p.cozulen, color: C.emerald, label: "Çözülen" },
+                            { value: p.devam, color: C.slate, label: "Devam Eden" },
+                            { value: p.yeni, color: C.coral, label: "Yeni Tespit" },
+                          ]}
+                          trackColor={pal.fieldBg}
+                          centerLabel={p.cozumOrani != null ? `%${p.cozumOrani}` : "—"}
+                          centerSub="çözüm oranı"
+                        />
+                        <span style={{ fontSize: 11.5, color: pal.inkSoft, textAlign: "center" }}>
+                          <strong style={{ color: C.emerald }}>{fmt(p.cozulen)}</strong> çöz&nbsp;·&nbsp;
+                          <strong style={{ color: pal.ink }}>{fmt(p.devam)}</strong> devam&nbsp;·&nbsp;
+                          <strong style={{ color: C.coral }}>{fmt(p.yeni)}</strong> yeni
+                        </span>
+                        <span style={{ fontSize: 11, color: okColor, fontWeight: 700 }}>
+                          toplam {fmt(p.acikBulgu)} açık bulgu
                         </span>
                       </div>
                     );
