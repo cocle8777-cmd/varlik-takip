@@ -19,6 +19,7 @@ import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./serv
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
 import LocationTrendChart from "./components/LocationTrendChart";
+import OverviewPanel from "./components/OverviewPanel";
 import ManagementKpiPanel from "./components/ManagementKpiPanel";
 import { deviceKeyOf, logDeviceAction, persistDeviceMeta } from "./services/deviceActionService";
 import { computeUnusedDevices, DEFAULT_STALE_DAYS } from "./services/unusedDeviceService";
@@ -128,6 +129,7 @@ export default function App({ user, onLogout } = {}) {
   const [reportSnapshots, setReportSnapshots] = useState({}); // { [reportId]: [snapshot, ...] }
   const [mgmtReport, setMgmtReport] = useState("inaktif"); // inaktif | zimmet | disk
   const [mgmtPeriod, setMgmtPeriod] = useState("month"); // month | week | raw
+  const [overviewPeriod, setOverviewPeriod] = useState("month"); // "Genel Durum" paneli dönemi
   const [mgmtLbsFilter, setMgmtLbsFilter] = useState([]); // üst lokasyon çoklu seçim
   const [showSettings, setShowSettings] = useState(false);
   const [settingsUnlocked, setSettingsUnlocked] = useState(false);
@@ -2564,12 +2566,29 @@ IT Support`;
                       {/* "son veri güncelleme" KPI kartı global footer'a taşındı (madde 1). */}
                     </div>
 
-                    {/* Genel Trend — İnaktif Cihaz + Zimmet Uyuşmazlığı lokasyon kırılımı, Şirket
-                        filtresiyle (bkz. konuşma — Sage Intelligence referansına göre uyarlandı) */}
+                    {/* Genel Durum — finans dashboard'u referansına göre (bkz. konuşma): cihaz sağlık
+                        şelalesi + sağlıklı cihaz/zimmet uyumu göstergeleri + dönemsel bulgu/çözüm trendi. */}
+                    <OverviewPanel
+                      snapshots={reportSnapshots}
+                      period={overviewPeriod}
+                      setPeriod={setOverviewPeriod}
+                      live={{
+                        toplamCihaz: realSccmAll.length,
+                        inaktif: inaktifStats.total,
+                        zimmetHatali: overallZimmet.bad,
+                        zimmetDogru: overallZimmet.ok,
+                        kritikDisk: diskStats.critical,
+                        kullanilmayan: unusedDeviceRows.length,
+                      }}
+                      styles={styles}
+                      pal={pal}
+                    />
+
+                    {/* Genel Trend — lokasyon bazlı İnaktif Cihaz + Zimmet Uyuşmazlığı, Şirket filtresiyle */}
                     <div style={{ ...styles.panel, padding: "20px 24px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                         <div>
-                          <p style={styles.settingsSectionTitle}>Genel Trend</p>
+                          <p style={styles.settingsSectionTitle}>Lokasyon Kırılımı</p>
                           <p style={{ ...styles.pageSub, margin: 0 }}>
                             Lokasyon bazlı İnaktif Cihaz ve Zimmet Uyuşmazlığı{dashboardCompanyFilter !== "all" ? ` — ${companyShortLabel(dashboardCompanyFilter)}` : ""}
                           </p>
