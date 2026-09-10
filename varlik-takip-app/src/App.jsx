@@ -14,7 +14,7 @@ import { fetchDiskRowsFromFile, mapDiskRow } from "./services/diskFileService";
 import { fetchSccmRowsFromFile, mapSccmRow } from "./services/sccmFileService";
 import { mapThRows, fetchThRowsFromFile } from "./services/thFileService";
 import { mapMonitorRows, fetchMonitorRowsFromFile } from "./services/monitorFileService";
-import { mapBsodRows } from "./services/bsodFileService";
+import { mapBsodRows, fetchBsodRowsFromFile } from "./services/bsodFileService";
 import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
@@ -1942,6 +1942,21 @@ IT Support`;
     }
   };
 
+  // LAKESIDE Weekly BSOD — diğer raporlar gibi backend senkron klasöründen otomatik yükler
+  // (bkz. konuşma: elle her seferinde eklemek zorunda kalınıyordu). Klasör senkronu yoksa
+  // backend hata döner, sessizce yutulur; manuel dosya seçimi (handleManualBsodFile) yedek kalır.
+  const loadRealBsodData = async ({ silent = false } = {}) => {
+    try {
+      const { fileName, modifiedAt, rows } = await fetchBsodRowsFromFile();
+      setBackendReachable(true);
+      setRealBsodAll(rows);
+      setRealBsodMeta({ fileName, modifiedAt });
+      if (!silent) showToast(`${fileName} içinden ${rows.length} BSOD kaydı yüklendi`);
+    } catch (err) {
+      if (!silent) showToast(err.message || "Dosyadan veri yüklenemedi");
+    }
+  };
+
   // Canlıya (otomatik SharePoint klasör senkronu) uzun süre geçilemeyeceği için, Ayarlar'dan
   // doğrudan bir Excel dosyası seçip elle yükleme yolu — backend/klasör yolu hiç gerekmez,
   // dosya tamamen tarayıcıda okunup aynı mapInaktifRow/mapDiskRow ile satıra çevrilir (bkz. konuşma)
@@ -2152,6 +2167,7 @@ IT Support`;
     if (activeReport === "bsod" || activeReport === "battery-health") {
       loadRealSccmData({ silent: true });
     }
+    if (activeReport === "bsod") loadRealBsodData({ silent: true });
     // Yeni Kurulum Kaydı formundaki LOKASYON listesi için mevcut lokasyonlar SCCM/TH'den derlenir.
     if (activeReport === "yeni-kurulum") {
       loadRealSccmData({ silent: true });

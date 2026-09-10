@@ -3,6 +3,7 @@
 //   veri: 46272 (Excel tarih serisi) | "AMS2B03.THYNET.THY.COM" | "BSOD :  VIDEO_TDR_FAILURE" | 1
 // Başlık 2. satırda olduğu için okuma `range: 1` ile yapılır (bkz. handleManualBsodFile).
 import { lookupBsod, shortHost } from "./bsodKnowledgeService";
+import { backendClient } from "./backendClient";
 
 function col(row, ...names) {
   for (const name of names) {
@@ -62,4 +63,18 @@ export function mapBsodRows(rawRows) {
   return (rawRows || [])
     .map(mapBsodRow)
     .filter((r) => r.hostname || r.bsodCode);
+}
+
+// Diğer raporlar (İnaktif/Disk/SCCM/TH/Monitor) gibi backend'in senkron klasöründen otomatik
+// yükler — sayfa yenilenince kaybolmaz (bkz. konuşma: "raporunu her seferinde tekrar eklemek
+// zorunda kalıyorum"). Klasör senkronu kurulmadıysa manuel dosya seçimi (handleManualBsodFile,
+// App.jsx) hâlâ kullanılabilir.
+export async function fetchBsodRowsFromFile() {
+  const result = await backendClient.getBsodReport();
+  if (!result.ok) throw new Error(result.message || "Dosya okunamadı");
+  return {
+    fileName: result.fileName,
+    modifiedAt: result.modifiedAt,
+    rows: mapBsodRows(result.rows || []),
+  };
 }

@@ -145,4 +145,5 @@ export const backendClient = {
   getSccmReport: () => request("/reports/sccm"),
   getThReport: () => request("/reports/th-envanteri"),
   getMonitorReport: () => request("/reports/monitor-raporu"),
+  getBsodReport: () => request("/reports/bsod"),
 };

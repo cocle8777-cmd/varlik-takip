@@ -73,6 +73,24 @@ router.get("/th-envanteri", (req, res) => {
   }
 });
 
+// LAKESIDE Weekly BSOD: aynı senkron klasördeki "Weekly_BSOD_yyyyMMddHHmmss.xlsx" dosyalarının
+// en güncelini okur. Dosyada 1. satır boş, gerçek başlıklar 2. satırda (headerRow: 1) —
+// "Crash Date | Machine Name | Application Name | BSOD Count" (bkz. bsodFileService.js).
+// Önceden sadece tarayıcıda elle dosya seçimiyle geliyordu, sayfa yenilenince kayboluyordu
+// (bkz. konuşma) — diğer raporlar gibi backend'den otomatik yüklensin diye eklendi.
+router.get("/bsod", (req, res) => {
+  const cfg = readSection("fileSource") || {};
+  if (!cfg.folderPath) {
+    return res.status(400).json({ ok: false, message: "Dosya kaynağı klasörü tanımlı değil (Ayarlar > Dosya Kaynağı)" });
+  }
+  try {
+    const { fileName, rows, modifiedAt } = loadLatestReport(cfg.folderPath, "Weekly_BSOD", { sheetIndex: 0, headerRow: 1 });
+    res.json({ ok: true, fileName, modifiedAt, rows });
+  } catch (err) {
+    res.status(502).json({ ok: false, message: err.message });
+  }
+});
+
 // Monitor Raporu: aynı klasördeki "Attached Monitors Report*.xlsx" dosyalarının en güncelini
 // okur. Başlıklar 2. satırda (headerRow: 1) — üstte tek bir rapor başlığı satırı var.
 router.get("/monitor-raporu", (req, res) => {
