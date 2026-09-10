@@ -117,6 +117,9 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
   const [mailBusy, setMailBusy] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [mailPreview, setMailPreview] = useState(null); // { url, to, at } — Ethereal/test SMTP önizleme linki
+  // Geriye dönük sorgu — hızlı filtre çipi + serbest arama (hepsi client-side, kayıtlar zaten yüklü).
+  const [qFilter, setQFilter] = useState("all"); // all | undelivered | unmailed | unsynced | waiting
+  const [qText, setQText] = useState("");
 
   const reload = () =>
     backendClient
@@ -199,8 +202,51 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
       n.has(id) ? n.delete(id) : n.add(id);
       return n;
     });
-  const allChecked = records.length > 0 && selected.size === records.length;
-  const toggleAll = () => setSelected(allChecked ? new Set() : new Set(records.map((r) => r.id)));
+
+  // "Bekliyor" = teslim edilmemiş VE kayıt tarihinden bu yana 7+ gün geçmiş (masada bekleyen cihaz).
+  const daysSince = (d) => {
+    const t = Date.parse(d);
+    return Number.isNaN(t) ? 0 : Math.floor((Date.now() - t) / 86400000);
+  };
+  const isUndelivered = (r) => norm(r.status) !== norm("Teslim edildi");
+  const isWaitingLong = (r) => isUndelivered(r) && daysSince(r.date) > 7;
+
+  const counts = useMemo(
+    () => ({
+      all: records.length,
+      undelivered: records.filter(isUndelivered).length,
+      unmailed: records.filter((r) => !r.mailSentAt).length,
+      unsynced: records.filter((r) => !r.excelSyncedAt).length,
+      waiting: records.filter(isWaitingLong).length,
+    }),
+    [records]
+  );
+
+  const filteredRecords = useMemo(() => {
+    let list = records;
+    if (qFilter === "undelivered") list = list.filter(isUndelivered);
+    else if (qFilter === "unmailed") list = list.filter((r) => !r.mailSentAt);
+    else if (qFilter === "unsynced") list = list.filter((r) => !r.excelSyncedAt);
+    else if (qFilter === "waiting") list = list.filter(isWaitingLong);
+    const q = norm(qText);
+    if (q) {
+      list = list.filter((r) =>
+        [r.serial, r.hostname, r.userInfo, r.atoNo, r.location, r.model, r.processedBy, r.returns]
+          .map(norm)
+          .some((v) => v.includes(q))
+      );
+    }
+    return list;
+  }, [records, qFilter, qText]);
+
+  const allChecked = filteredRecords.length > 0 && filteredRecords.every((r) => selected.has(r.id));
+  const toggleAll = () =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (filteredRecords.every((r) => n.has(r.id))) filteredRecords.forEach((r) => n.delete(r.id));
+      else filteredRecords.forEach((r) => n.add(r.id));
+      return n;
+    });
 
   const syncExcel = async () => {
     setSyncing(true);
@@ -216,7 +262,11 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
     }
   };
 
-  const targetRecs = useMemo(() => (selected.size > 0 ? records.filter((r) => selected.has(r.id)) : records), [records, selected]);
+  // Seçim varsa seçililer; yoksa o an filtrelenmiş liste (aktif filtre "tümü" anlamına gelir).
+  const targetRecs = useMemo(
+    () => (selected.size > 0 ? records.filter((r) => selected.has(r.id)) : filteredRecords),
+    [records, selected, filteredRecords]
+  );
 
   // SERİ NO — yazarken TuruncuHat'tan seri no önerisi, seçilince SADECE Model otomatik dolar.
   const thBySerial = useMemo(() => {
@@ -555,11 +605,59 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
       {/* KAYITLAR + AKSİYONLAR */}
       <div style={{ ...styles.panel, padding: "20px 24px" }}>
         <div style={styles.settingsSectionHead}>
-          <p style={styles.settingsSectionTitle}>Kayıtlar ({records.length})</p>
+          <p style={styles.settingsSectionTitle}>
+            Kayıtlar ({filteredRecords.length === records.length ? records.length : `${filteredRecords.length} / ${records.length}`})
+          </p>
           <span style={{ fontSize: 12.5, color: pal.inkSoft }}>
-            {records.filter((r) => r.excelSyncedAt).length} Excel'e işlendi · {records.filter((r) => r.mailSentAt).length} mail gönderildi
+            {counts.unsynced === 0 ? "Tümü Excel'e işlendi" : `${counts.unsynced} Excel'e işlenmedi`} ·{" "}
+            {counts.unmailed === 0 ? "Tümü maillendi" : `${counts.unmailed} mail gönderilmedi`}
           </span>
         </div>
+
+        {/* Geriye dönük sorgu — hızlı filtreler + arama */}
+        {records.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "4px 0 14px" }}>
+            {[
+              ["all", "Tümü", counts.all],
+              ["undelivered", "Teslim bekleyen", counts.undelivered],
+              ["waiting", "7+ gün bekleyen", counts.waiting],
+              ["unmailed", "Mail gönderilmemiş", counts.unmailed],
+              ["unsynced", "Excel'e işlenmemiş", counts.unsynced],
+            ].map(([key, label, n]) => {
+              const on = qFilter === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setQFilter(key)}
+                  style={{
+                    ...styles.btnGhost,
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    fontWeight: on ? 700 : 400,
+                    background: on ? pal.accentSoft || pal.line : "transparent",
+                    borderColor: on ? pal.accent || pal.ok : pal.line,
+                    color: on ? pal.accent || pal.ink : pal.inkSoft,
+                  }}
+                >
+                  {label} <span style={{ opacity: 0.7 }}>({n})</span>
+                </button>
+              );
+            })}
+            <input
+              type="text"
+              value={qText}
+              onChange={(e) => setQText(e.target.value)}
+              style={{ ...inp, flex: "1 1 200px", minWidth: 160 }}
+              placeholder="Ara: seri no / hostname / kullanıcı / ATO / lokasyon"
+            />
+            {(qFilter !== "all" || qText) && (
+              <button type="button" style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12 }} onClick={() => { setQFilter("all"); setQText(""); }}>
+                Temizle
+              </button>
+            )}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "6px 0 14px" }}>
           <input
@@ -589,8 +687,12 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
               <option value="en">English</option>
             </select>
           </label>
-          <button style={styles.btnGhost} onClick={sendMail} disabled={mailBusy || records.length === 0}>
-            {mailBusy ? "Gönderiliyor…" : `✉️ Mail Gönder — ${mailLang === "en" ? "EN" : "TR"} (${selected.size > 0 ? selected.size + " seçili" : "tümü"})`}
+          <button style={styles.btnGhost} onClick={sendMail} disabled={mailBusy || targetRecs.length === 0}>
+            {mailBusy
+              ? "Gönderiliyor…"
+              : `✉️ Mail Gönder — ${mailLang === "en" ? "EN" : "TR"} (${
+                  selected.size > 0 ? selected.size + " seçili" : qFilter !== "all" || qText ? filteredRecords.length + " filtreli" : "tümü"
+                })`}
           </button>
         </div>
 
@@ -613,6 +715,8 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
 
         {records.length === 0 ? (
           <p style={styles.pageSub}>Henüz kayıt yok — yukarıdaki formdan ekleyin.</p>
+        ) : filteredRecords.length === 0 ? (
+          <p style={styles.pageSub}>Bu filtreyle eşleşen kayıt yok.</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={styles.table}>
@@ -630,7 +734,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => (
+                {filteredRecords.map((r) => (
                   <tr key={r.id} style={selected.has(r.id) ? styles.rowSelected : undefined}>
                     <td style={styles.td} onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} style={styles.checkbox} />
