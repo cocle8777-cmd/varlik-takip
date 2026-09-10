@@ -18,7 +18,7 @@ const FIELDS = [
   { k: "processedBy", label: "İŞLEM YAPAN" },
   { k: "status", label: "DURUM", options: ["Teslim edildi", "Hazırlandı"] },
   { k: "deliveryDate", label: "TESLİM TARİHİ", type: "date" },
-  { k: "reason", label: "NEDENI", wide: true },
+  { k: "reason", label: "NEDENI", options: ["İADE", "DEĞİŞİM"] },
   { k: "returns", label: "İADELER", wide: true },
 ];
 
@@ -27,16 +27,43 @@ const emptyForm = (who) => Object.fromEntries(FIELDS.map((f) => [f.k, f.k === "d
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-// Mail gövdesi — kullanıcının verdiği şablona birebir (bkz. konuşma).
+// Mail metinleri — TR (kullanıcının verdiği şablona birebir) ve EN (aynı şablonun İngilizcesi).
+// Adres satırındaki bina/tarif metni gerçek fiziksel adres olduğu için iki dilde de aynen korunur.
+const MAIL_TEXT = {
+  tr: {
+    greeting: "Merhaba,",
+    intro: "Cihazınız hazırlanmıştır. ATO kaydına Turuncuhattan kapatma onayı vermeniz durumunda&nbsp; bizden teslim alabilirsiniz.",
+    head: ["Seri Numarası", "Barkod", "Model", "Marka", "Varlık Kataloğu", "Varlık Transfer Emri"],
+    addressLabel: "Adres",
+    address: "<strong>EBİ- Corporate Club binası</strong> (Atatürk Uluslararası Havalimanı B Kapısı , (Eğitim Akademisi, Merkez yemekhane yanı))",
+    locationLabel: "Konum",
+    subjectOne: "Cihazınız Hazır — ATO Kapatma Onayı",
+    subjectMany: (n) => `Cihazlarınız Hazır — ATO Kapatma Onayı (${n} cihaz)`,
+    plain: "Cihazınız hazırlanmıştır. ATO kaydına Turuncuhattan kapatma onayı vermeniz durumunda bizden teslim alabilirsiniz. Adres: EBİ- Corporate Club binası. Konum: https://goo.gl/maps/boaRCuAx7Qu",
+  },
+  en: {
+    greeting: "Hello,",
+    intro: "Your device has been prepared. Once you give the ATO record closure approval via Turuncuhat, you may collect it from us.",
+    head: ["Serial Number", "Barcode", "Model", "Brand", "Asset Catalog", "Asset Transfer Order"],
+    addressLabel: "Address",
+    address: "<strong>EBİ- Corporate Club binası</strong> (Atatürk Uluslararası Havalimanı B Kapısı , (Eğitim Akademisi, Merkez yemekhane yanı))",
+    locationLabel: "Location",
+    subjectOne: "Your Device Is Ready — ATO Closure Approval",
+    subjectMany: (n) => `Your Devices Are Ready — ATO Closure Approval (${n} devices)`,
+    plain: "Your device has been prepared. Once you give the ATO record closure approval via Turuncuhat, you may collect it from us. Address: EBİ- Corporate Club binası. Location: https://goo.gl/maps/boaRCuAx7Qu",
+  },
+};
+
+// Mail gövdesi — kullanıcının verdiği şablona birebir (bkz. konuşma). lang: "tr" | "en".
 // Tablo sütunları: Seri Numarası · Barkod · Model · Marka · Varlık Kataloğu · Varlık Transfer Emri
 // Barkod/Marka form'da yok → seri no ile TuruncuHat'tan doldurulur. Varlık Transfer Emri = ATO NUMARASI.
-function buildMailHtml(recs, thRows = []) {
+function buildMailHtml(recs, thRows = [], lang = "tr") {
+  const T = MAIL_TEXT[lang] || MAIL_TEXT.tr;
   const thBySerial = new Map();
   thRows.forEach((t) => {
     const k = String(t.serial || "").trim().toLowerCase();
     if (k) thBySerial.set(k, t);
   });
-  const head = ["Seri Numarası", "Barkod", "Model", "Marka", "Varlık Kataloğu", "Varlık Transfer Emri"];
   const body = recs
     .map((r) => {
       const th = thBySerial.get(String(r.serial || "").trim().toLowerCase());
@@ -54,16 +81,16 @@ function buildMailHtml(recs, thRows = []) {
     })
     .join("");
   return `<div style="font-family:Calibri,Arial,Helvetica,sans-serif;font-size:14px;color:#000;line-height:1.55;">
-    <p>Merhaba,</p>
-    <p>Cihazınız hazırlanmıştır. ATO kaydına Turuncuhattan kapatma onayı vermeniz durumunda&nbsp; bizden teslim alabilirsiniz.</p>
+    <p>${T.greeting}</p>
+    <p>${T.intro}</p>
     <table style="border-collapse:collapse;margin:10px 0 14px;">
-      <thead><tr>${head
+      <thead><tr>${T.head
         .map((h) => `<th style="border:1px solid #000;padding:6px 10px;text-align:left;color:#C00000;font-weight:bold;white-space:nowrap;">${h}</th>`)
         .join("")}</tr></thead>
       <tbody>${body}</tbody>
     </table>
-    <p>Adres: <strong>EBİ- Corporate Club binası</strong> (Atatürk Uluslararası Havalimanı B Kapısı , (Eğitim Akademisi, Merkez yemekhane yanı))</p>
-    <p>Konum : <a href="https://goo.gl/maps/boaRCuAx7Qu">https://goo.gl/maps/boaRCuAx7Qu</a></p>
+    <p>${T.addressLabel}: ${T.address}</p>
+    <p>${T.locationLabel} : <a href="https://goo.gl/maps/boaRCuAx7Qu">https://goo.gl/maps/boaRCuAx7Qu</a></p>
   </div>`;
 }
 
@@ -86,8 +113,10 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
   const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [mailTo, setMailTo] = useState("");
+  const [mailLang, setMailLang] = useState("tr"); // "tr" | "en" — gönderim öncesi seçilir
   const [mailBusy, setMailBusy] = useState(false);
   const [lastSync, setLastSync] = useState(null);
+  const [mailPreview, setMailPreview] = useState(null); // { url, to, at } — Ethereal/test SMTP önizleme linki
 
   const reload = () =>
     backendClient
@@ -131,6 +160,28 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
     setForm(Object.fromEntries(FIELDS.map((f) => [f.k, r[f.k] || ""])));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  // Tek tıkla teslim: sadece teslim tarihini sor (varsayılan bugün), DURUM'u "Teslim edildi" yap
+  // ve arkasından otomatik olarak Excel'e işle ("Excel'e İşle" demeye gerek kalmadan).
+  const deliver = async (r) => {
+    const d = window.prompt(`"${r.hostname || r.serial}" teslim tarihi:`, r.deliveryDate || today());
+    if (d === null) return;
+    try {
+      await backendClient.updateNewInstall(r.id, { ...r, status: "Teslim edildi", deliveryDate: String(d).trim() });
+      let synced = false;
+      try {
+        const res = await backendClient.syncNewInstallExcel(excelPath || undefined);
+        setLastSync(res);
+        synced = true;
+      } catch (e) {
+        showToast(`Teslim işlendi ama Excel'e yazılamadı — ${e.message}`);
+      }
+      await reload();
+      if (synced) showToast("Teslim edildi ve Excel'e işlendi");
+    } catch (err) {
+      showToast(`Güncellenemedi — ${err.message}`);
+    }
+  };
+
   const del = async (r) => {
     if (!window.confirm(`"${r.hostname || r.serial}" kaydı silinsin mi?`)) return;
     await backendClient.deleteNewInstall(r.id).catch(() => {});
@@ -242,31 +293,33 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
       return;
     }
     const to = recipients.join(", ");
-    const subject = targetRecs.length === 1 ? "Cihazınız Hazır — ATO Kapatma Onayı" : `Cihazlarınız Hazır — ATO Kapatma Onayı (${targetRecs.length} cihaz)`;
+    const T = MAIL_TEXT[mailLang] || MAIL_TEXT.tr;
+    const subject = targetRecs.length === 1 ? T.subjectOne : T.subjectMany(targetRecs.length);
     setMailBusy(true);
     try {
       const r = await backendClient.sendMail({
         to,
         subject,
-        text: "Cihazınız hazırlanmıştır. ATO kaydına Turuncuhattan kapatma onayı vermeniz durumunda bizden teslim alabilirsiniz. Adres: EBİ- Corporate Club binası. Konum: https://goo.gl/maps/boaRCuAx7Qu",
-        html: buildMailHtml(targetRecs, thRows),
+        text: T.plain,
+        html: buildMailHtml(targetRecs, thRows, mailLang),
       });
       const ok = !!r.ok;
       if (ok) {
         await backendClient.markNewInstallsMailed(targetRecs.map((x) => x.id)).catch(() => {});
         await reload();
+        setMailPreview(r.previewUrl ? { url: r.previewUrl, to, at: new Date() } : null);
       }
       recordMailHistory &&
         recordMailHistory({
           id: Date.now(),
           date: new Date().toLocaleString("tr-TR"),
           dept: "Yeni Kurulum",
-          report: "Yeni Kurulum Kaydı",
+          report: `Yeni Kurulum Kaydı (${mailLang === "en" ? "EN" : "TR"})`,
           recipients: ok ? targetRecs.length : 0,
           status: ok ? "Başarılı" : "Gönderilemedi",
-          details: [{ location: `${targetRecs.length} cihaz`, to, count: targetRecs.length, ok, message: r.message || (ok ? "Gönderildi" : "Gönderilemedi") }],
+          details: [{ location: `${targetRecs.length} cihaz`, to, count: targetRecs.length, ok, message: `[${mailLang === "en" ? "EN" : "TR"}] ` + (r.message || (ok ? "Gönderildi" : "Gönderilemedi")) + (r.previewUrl ? ` · önizleme: ${r.previewUrl}` : "") }],
         });
-      showToast(ok ? `✅ Kurulum bildirimi gönderildi (${to})` : `❌ Gönderilemedi — ${r.message || ""}`);
+      showToast(ok ? `✅ Kurulum bildirimi gönderildi (${to})${r.previewUrl ? " — önizleme linki aşağıda" : ""}` : `❌ Gönderilemedi — ${r.message || ""}`);
     } catch (err) {
       showToast(`❌ Gönderilemedi — ${err.message}`);
     } finally {
@@ -275,6 +328,25 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
   };
 
   const inp = { ...styles.formInput };
+
+  // İADELER — artık elle yazılmıyor: aşağıdaki "zimmetli cihaz" listesinden seçilen cihazlar
+  // satır satır form.returns içine yazılır (backend değişmez), formda çip olarak gösterilir.
+  const returnLines = useMemo(() => (form.returns ? form.returns.split("\n").filter((l) => l.trim()) : []), [form.returns]);
+  const lineForDevice = (r) =>
+    `SN: ${r.serial || "—"} · ${r.model || r.marka || r.deviceType || ""} · sahibi: ${r.ownerFull || r.owner}${r.location && r.location !== "—" ? ` · ${r.location}` : ""}`;
+  const isReturnAdded = (r) => returnLines.some((l) => l.startsWith(`SN: ${r.serial || "—"} ·`));
+  const addReturn = (r) => {
+    if (isReturnAdded(r)) return;
+    setForm((p) => ({ ...p, returns: (p.returns ? p.returns.replace(/\s*$/, "") + "\n" : "") + lineForDevice(r) }));
+    setReturnQuery(""); // seçince açılan liste kapansın
+    showToast("İADELER'e eklendi");
+  };
+  const removeReturnAt = (idx) =>
+    setForm((p) => {
+      const ls = (p.returns || "").split("\n").filter((l) => l.trim());
+      ls.splice(idx, 1);
+      return { ...p, returns: ls.join("\n") };
+    });
 
   return (
     <>
@@ -300,7 +372,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
           {FIELDS.map((f) => {
             const isLoc = f.options === "LOCATIONS";
             const fixedOpts = Array.isArray(f.options) ? f.options : null;
-            const isTextarea = f.k === "reason" || f.k === "returns";
+            const isReturns = f.k === "returns";
             return (
               <div key={f.k} style={f.wide ? styles.formFieldWide : styles.formField}>
                 <label style={styles.formLabel}>{f.label}</label>
@@ -327,13 +399,51 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                     ))}
                     {form[f.k] && !fixedOpts.includes(form[f.k]) && <option value={form[f.k]}>{form[f.k]}</option>}
                   </select>
-                ) : isTextarea ? (
-                  <textarea
-                    rows={2}
-                    value={form[f.k]}
-                    onChange={(e) => setF(f.k, e.target.value)}
-                    style={{ ...inp, resize: "vertical", fontFamily: "inherit" }}
-                  />
+                ) : isReturns ? (
+                  <div
+                    style={{
+                      ...inp,
+                      height: "auto",
+                      minHeight: 42,
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      alignItems: "flex-start",
+                      padding: 7,
+                    }}
+                  >
+                    {returnLines.length === 0 ? (
+                      <span style={{ color: pal.inkSoft, fontSize: 12.5, alignSelf: "center" }}>
+                        Aşağıdaki "kişinin zimmetli cihazları" listesinden seçin
+                      </span>
+                    ) : (
+                      returnLines.map((l, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            border: `1px solid ${pal.line}`,
+                            borderRadius: 6,
+                            padding: "3px 6px 3px 9px",
+                            fontSize: 12,
+                            maxWidth: "100%",
+                          }}
+                        >
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeReturnAt(i)}
+                            title="Kaldır"
+                            style={{ border: "none", background: "transparent", cursor: "pointer", color: pal.bad, fontWeight: 700, fontSize: 14, lineHeight: 1, flexShrink: 0 }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
                 ) : f.k === "serial" ? (
                   <>
                     <input
@@ -397,33 +507,47 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                   {thRows.length === 0 ? "TuruncuHat verisi henüz yüklenmedi." : "Eşleşen kişi/cihaz bulunamadı."}
                 </p>
               ) : (
-                returnMatches.map((r) => (
-                  <div
-                    key={r.rowKey || `${r.serial}-${r.ownerFull}`}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 12px", borderBottom: `1px solid ${pal.line}`, fontSize: 12.5 }}
-                  >
-                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                      <strong>{r.ownerFull || r.owner}</strong> · {r.serial || "—"} · {r.model || r.marka || r.deviceType || "—"}
-                      {r.location && r.location !== "—" ? ` · ${r.location}` : ""}
-                    </span>
-                    <button
-                      type="button"
-                      style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
-                      onClick={() => {
-                        const line = `SN: ${r.serial || "—"} · ${r.model || r.marka || r.deviceType || ""} · sahibi: ${r.ownerFull || r.owner}${r.location && r.location !== "—" ? ` · ${r.location}` : ""}`;
-                        setForm((p) => ({ ...p, returns: (p.returns ? p.returns.replace(/\s*$/, "") + "\n" : "") + line }));
-                        showToast("İADELER alanına eklendi");
+                returnMatches.map((r) => {
+                  const added = isReturnAdded(r);
+                  return (
+                    <div
+                      key={r.rowKey || `${r.serial}-${r.ownerFull}`}
+                      onClick={() => !added && addReturn(r)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        padding: "8px 12px",
+                        borderBottom: `1px solid ${pal.line}`,
+                        fontSize: 12.5,
+                        cursor: added ? "default" : "pointer",
+                        opacity: added ? 0.55 : 1,
                       }}
                     >
-                      + İADELER'e ekle
-                    </button>
-                  </div>
-                ))
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <strong>{r.ownerFull || r.owner}</strong> · {r.serial || "—"} · {r.model || r.marka || r.deviceType || "—"}
+                        {r.location && r.location !== "—" ? ` · ${r.location}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={added}
+                        style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addReturn(r);
+                        }}
+                      >
+                        {added ? "✓ eklendi" : "+ İADELER'e ekle"}
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
           )}
           <p style={{ ...styles.formHelper, marginTop: 6 }}>
-            Kişi adı SCCM'deki gibi yazılır; TuruncuHat zimmet kayıtlarında eşleşen kişiye ait cihazlar listelenir. "+ İADELER'e ekle" ile aşağıdaki İADELER alanına satır olarak eklenir (elle düzenlenebilir).
+            Kişi adı SCCM'deki gibi yazılır; TuruncuHat zimmet kayıtlarında eşleşen kişiye ait cihazlar listelenir. Bir cihaza tıklayınca (veya "+ İADELER'e ekle") yukarıdaki İADELER alanına çip olarak eklenir; çipin ×'i ile kaldırılır. Elle yazılmaz.
           </p>
         </div>
       </div>
@@ -458,8 +582,15 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
             style={{ ...inp, flex: "1 1 300px" }}
             placeholder="Mail alıcı(lar) — boşsa lokasyon mail grubu"
           />
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: pal.inkSoft }}>
+            Dil
+            <select value={mailLang} onChange={(e) => setMailLang(e.target.value)} style={{ ...inp, width: 90, flex: "0 0 auto" }}>
+              <option value="tr">Türkçe</option>
+              <option value="en">English</option>
+            </select>
+          </label>
           <button style={styles.btnGhost} onClick={sendMail} disabled={mailBusy || records.length === 0}>
-            {mailBusy ? "Gönderiliyor…" : `✉️ Mail Gönder (${selected.size > 0 ? selected.size + " seçili" : "tümü"})`}
+            {mailBusy ? "Gönderiliyor…" : `✉️ Mail Gönder — ${mailLang === "en" ? "EN" : "TR"} (${selected.size > 0 ? selected.size + " seçili" : "tümü"})`}
           </button>
         </div>
 
@@ -467,6 +598,16 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
           <p style={{ ...styles.formHelper, color: pal.ok, marginTop: 0 }}>
             {lastSync.existed ? "Mevcut dosyaya işlendi" : "Dosya oluşturuldu"} · {lastSync.file} · toplam {lastSync.totalRows} satır
             {lastSync.manualRowsKept ? ` (${lastSync.manualRowsKept} elle eklenen satır korundu)` : ""}
+          </p>
+        )}
+
+        {mailPreview && (
+          <p style={{ ...styles.formHelper, marginTop: 0 }}>
+            ✉️ Son gönderim ({mailPreview.to}) —{" "}
+            <a href={mailPreview.url} target="_blank" rel="noreferrer" style={{ color: pal.accent || pal.ok, fontWeight: 600 }}>
+              maili tarayıcıda önizle
+            </a>{" "}
+            <span style={{ color: pal.inkSoft }}>(test SMTP kutusu)</span>
           </p>
         )}
 
@@ -514,6 +655,17 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                       )}
                     </td>
                     <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
+                      {r.status !== "Teslim edildi" && (
+                        <>
+                          <button
+                            style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12, color: pal.ok, borderColor: pal.ok }}
+                            onClick={() => deliver(r)}
+                            title="Teslim edildi olarak işaretle (teslim tarihini sorar)"
+                          >
+                            ✓ Teslim Et
+                          </button>{" "}
+                        </>
+                      )}
                       <button style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12 }} onClick={() => edit(r)}>Düzenle</button>{" "}
                       <button style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12, color: pal.bad }} onClick={() => del(r)}>Sil</button>
                     </td>
