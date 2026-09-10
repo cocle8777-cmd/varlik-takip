@@ -1,0 +1,126 @@
+require("dotenv").config({ quiet: true });
+const express = require("express");
+const cors = require("cors");
+const datasourceRouter = require("./src/routes/datasource");
+const smtpRouter = require("./src/routes/smtp");
+const mailRouter = require("./src/routes/mail");
+const mailGroupsRouter = require("./src/routes/mailgroups");
+const mailHistoryRouter = require("./src/routes/mailhistory");
+const fileSourceRouter = require("./src/routes/filesource");
+const reportsRouter = require("./src/routes/reports");
+const deviceActionsRouter = require("./src/routes/deviceactions");
+const snapshotsRouter = require("./src/routes/snapshots");
+const appConfigRouter = require("./src/routes/appconfig");
+const authRouter = require("./src/routes/auth");
+const authSettingsRouter = require("./src/routes/authsettings");
+const { verifyCredentials, requireSettingsAuth } = require("./src/auth");
+const { requireAuth, requireMasterAuth } = require("./src/authMiddleware");
+const { readSection } = require("./src/store");
+
+function createApp() {
+  const app = express();
+  app.disable("x-powered-by");
+  app.use(express.json());
+
+  // Electron'un file:// kaynaklı istekleri Origin göndermeyebilir, origin yoksa da izin verilir.
+  // Ağ üzerinden erişim için sabit bir origin listesi yerine, port 5173'teki herhangi bir host'a
+  // (localhost, 127.0.0.1, LAN IP'si) izin veriyoruz — bkz. konuşma: iç ağda güven kabul edildi,
+  // kimlik doğrulama katmanı yok, bu yüzden yalnızca güvenilir bir iç ağda çalıştırılmalı.
+  const ALLOWED_ORIGIN_PATTERN = /^https?:\/\/[^/]+:5173$/;
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (!origin || ALLOWED_ORIGIN_PATTERN.test(origin)) return callback(null, true);
+        callback(new Error("CORS: izin verilmeyen origin"));
+      },
+    })
+  );
+
+  app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+  // Ayarlar ekranının girişi — kullanıcı adı/şifre doğrularsa frontend bunları her Ayarlar
+  // isteğinde header olarak gönderir (bkz. requireSettingsAuth)
+  app.post("/api/settings/login", (req, res) => {
+    const { username, password } = req.body || {};
+    if (verifyCredentials(username, password)) return res.json({ ok: true });
+    res.status(401).json({ ok: false, message: "Kullanıcı adı veya şifre hatalı" });
+  });
+
+  // /api/auth: login/setup-master/domain public'tir (giriş akışının kendisi), /me requireAuth
+  // ile kendi içinde korunur (bkz. routes/auth.js)
+  app.use("/api/auth", authRouter);
+
+  // Ayarlar altındaki uçlar (kimlik bilgisi/entegrasyon yönetimi) korumalı; datasource/smtp/
+  // mailgroups/filesource mevcut paylaşımlı admin şifresi (requireSettingsAuth) ile korunmaya
+  // devam eder — çalışan akış bozulmasın diye dokunulmadı. Kimlik doğrulama yapılandırması
+  // (LDAP/RADIUS/TACACS+) ise yeni, gerçek Master User oturumu gerektirir (requireMasterAuth).
+  app.use("/api/settings/datasource", requireSettingsAuth, datasourceRouter);
+  app.use("/api/settings/smtp", requireSettingsAuth, smtpRouter);
+  app.use("/api/settings/mailgroups", requireSettingsAuth, mailGroupsRouter);
+  app.use("/api/settings/filesource", requireSettingsAuth, fileSourceRouter);
+  app.use("/api/settings/authsettings", requireMasterAuth, authSettingsRouter);
+  // Genel uygulama ayarları (Kullanılmayan Cihazlar eşiği, LakeSide batarya kaynağı) —
+  // düzenleme admin şifresiyle korunur, okuma aşağıda requireAuth ile açıktır.
+  app.use("/api/settings/appconfig", requireSettingsAuth, appConfigRouter);
+
+  // Lokasyon-mail eşleşmeleri (mailGroups) SADECE OKUMA için — Mail Gönder her oturum açmış
+  // kullanıcı tarafından kullanılabilmeli, admin şifresi istemeden (bkz. konuşma: "başkası mail
+  // atmak istediğinde admin girişi sormasın, herkes gönderebilmeli"). Düzenleme (PUT, yukarıdaki
+  // /api/settings/mailgroups) hâlâ admin şifresiyle korunuyor — sadece kim/nereye gönderileceği
+  // bilgisini okumak admin yetkisi gerektirmiyor, e-posta adresinden başka hassas bir şey içermiyor.
+  app.get("/api/mailgroups", requireAuth, (req, res) => {
+    res.json(readSection("mailGroups") || {});
+  });
+
+  // Kullanılmayan Cihazlar raporu "son giriş çok eski" eşiğini (staleDays) okumak için —
+  // rapor ekranı her oturum açmış kullanıcı için çalışır, admin şifresi gerektirmez.
+  app.get("/api/appconfig", requireAuth, (req, res) => {
+    const saved = readSection("appConfig") || {};
+    res.json({
+      unusedStaleDays: Number(saved.unusedStaleDays) > 0 ? Number(saved.unusedStaleDays) : 90,
+      lakesideBatterySource: { folderPath: (saved.lakesideBatterySource && saved.lakesideBatterySource.folderPath) || "" },
+    });
+  });
+
+  // Artık uygulama genelinde gerçek bir Login akışı olduğu için (bkz. konuşma — gereksinim #9,
+  // "Session/token yönetimi güvenli şekilde gerçekleştirilmeli") mail gönderme/geçmişi ve rapor
+  // uçları da requireAuth ile korunuyor — önceden tamamen açıktı.
+  app.use("/api/mail/history", requireAuth, mailHistoryRouter);
+  app.use("/api/mail", requireAuth, mailRouter);
+  app.use("/api/reports", requireAuth, reportsRouter);
+  // Cihaz bazlı not/durum/aksiyon geçmişi (madde 5) — oturum açmış her kullanıcı erişebilir.
+  app.use("/api/devices", requireAuth, deviceActionsRouter);
+  // Dönemsel çözüm istatistikleri için snapshot geçmişi (madde 2, 13).
+  app.use("/api/snapshots", requireAuth, snapshotsRouter);
+
+  app.use((req, res) => res.status(404).json({ error: "Bulunamadı" }));
+
+  // Stack trace veya dosya yolu istemciye sızdırılmaz
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(err.message?.startsWith("CORS") ? 403 : 500).json({ error: "İstek işlenemedi" });
+  });
+
+  return app;
+}
+
+function startServer({ port = process.env.PORT || 5000, host = process.env.HOST || "127.0.0.1" } = {}) {
+  return new Promise((resolve, reject) => {
+    const app = createApp();
+    const server = app.listen(port, host, () => {
+      console.log(`Varlık Takip backend http://${host}:${port} adresinde çalışıyor`);
+      resolve(server);
+    });
+    server.on("error", reject);
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((err) => {
+    console.error("Backend başlatılamadı:", err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { createApp, startServer };
