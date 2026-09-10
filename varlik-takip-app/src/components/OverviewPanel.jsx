@@ -1,10 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Chart, BarController, CategoryScale, LinearScale, BarElement, Tooltip } from "chart.js";
+import { useMemo } from "react";
 import Donut from "./Donut";
 import Gauge from "./Gauge";
 import { combinedPeriodSummary, waterfallSegments, pctChange } from "../services/dashboardOverviewService";
-
-Chart.register(BarController, CategoryScale, LinearScale, BarElement, Tooltip);
 
 const PERIOD_LABELS = { month: "Aylık", week: "Haftalık", raw: "Her Yükleme" };
 const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("tr-TR"));
@@ -54,9 +51,6 @@ function DeltaTag({ value, unit = "%", goodWhenNegative = true, pal }) {
 }
 
 export default function OverviewPanel({ snapshots, period, setPeriod, live, styles, pal }) {
-  const wfRef = useRef(null);
-  const wfChart = useRef(null);
-
   const summary = useMemo(() => combinedPeriodSummary(snapshots, period), [snapshots, period]);
   const { series, latest, prev, enough } = summary;
 
@@ -91,35 +85,24 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
   const latestTrend = trendRows[trendRows.length - 1] || null;
   const prevTrend = trendRows[trendRows.length - 2] || null;
 
-  // ---- Waterfall (tek Chart.js grafiği) ----
-  useEffect(() => {
-    if (!wfRef.current) return;
-    if (wfChart.current) wfChart.current.destroy();
-    let running = wf[0].value;
-    const bars = wf.map((s) => {
-      if (s.kind === "total" || s.kind === "result") return [0, s.value];
-      const bottom = Math.max(0, running - s.value);
-      const r = [bottom, running];
-      running = bottom;
-      return r;
-    });
-    const colors = wf.map((s) => (s.kind === "total" ? C.slate : s.kind === "result" ? C.emerald : C.coral));
-    wfChart.current = new Chart(wfRef.current, {
-      type: "bar",
-      data: { labels: wf.map((s) => s.key), datasets: [{ data: bars, backgroundColor: colors, borderRadius: 5, barPercentage: 0.6 }] },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.label}: ${fmt(wf[c.dataIndex].value)}` } } },
-        scales: {
-          x: { ticks: { color: pal.inkSoft, font: { size: 10 }, maxRotation: 18, minRotation: 0 }, grid: { display: false } },
-          y: { beginAtZero: true, ticks: { color: pal.inkSoft, font: { size: 10 } }, grid: { color: pal.line } },
-        },
-      },
-    });
-    return () => wfChart.current && wfChart.current.destroy();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(wf), pal]);
+  // "Cihaz Sağlık Şelalesi" — Toplam Cihaz'dan problem kategorileri çıkarılıp Temiz Cihaz'a
+  // ulaşılır. Grafik yerine: tek yığılı çubuk (kompozisyon) + çıkarma tablosu (anlaşılır).
+  const healthRows = [
+    { key: "Toplam Cihaz", value: live.toplamCihaz, sign: "", color: C.slate, bold: true },
+    { key: "İnaktif Cihaz", value: live.inaktif, sign: "−", color: C.coral },
+    { key: "Zimmet Hatalı", value: live.zimmetHatali, sign: "−", color: C.coral },
+    { key: "Kritik Disk", value: live.kritikDisk, sign: "−", color: C.coral },
+    { key: "Kullanılmayan", value: live.kullanilmayan, sign: "−", color: C.coral },
+    { key: "Temiz Cihaz", value: temiz, sign: "=", color: C.emerald, bold: true },
+  ];
+  const stackSegs = [
+    { key: "Temiz", value: temiz, color: C.emerald },
+    { key: "İnaktif", value: live.inaktif, color: "#F4A0A0" },
+    { key: "Zimmet Hatalı", value: live.zimmetHatali, color: C.coral },
+    { key: "Kritik Disk", value: live.kritikDisk, color: "#E0533A" },
+    { key: "Kullanılmayan", value: live.kullanilmayan, color: "#B23B27" },
+  ];
+  const stackTotal = stackSegs.reduce((s, x) => s + x.value, 0) || 1;
 
   // --- ortak parçalar ---
   const Card = ({ title, accent, span, children, pad = 16 }) => (
@@ -264,14 +247,52 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
           </div>
         </Card>
 
-        {/* ---- Satır 2: Cihaz Sağlık Şelalesi ---- */}
+        {/* ---- Satır 2: Cihaz Sağlık Şelalesi (yığılı çubuk + çıkarma tablosu) ---- */}
         <Card title="Cihaz Sağlık Şelalesi" accent={C.slate} span={7}>
-          <p style={{ ...styles.pageSub, margin: "0 0 8px", fontSize: 11.5 }}>
-            Toplam {fmt(live.toplamCihaz)} cihazdan problem kategorileri çıkınca kalan "temiz" cihaz (kategoriler çakışabilir)
+          <p style={{ ...styles.pageSub, margin: "0 0 12px", fontSize: 11.5 }}>
+            Toplam cihazdan problem kategorileri çıkarılınca kalan "temiz" cihaz (bir cihaz birden çok kategoride olabilir)
           </p>
-          <div style={{ flex: 1, minHeight: 250 }}>
-            <canvas ref={wfRef} />
+
+          {/* Tek yığılı çubuk — kompozisyon */}
+          <div style={{ display: "flex", height: 26, borderRadius: 6, overflow: "hidden", border: `1px solid ${pal.line}` }}>
+            {stackSegs.map((s) => {
+              const w = (s.value / stackTotal) * 100;
+              return (
+                <div key={s.key} title={`${s.key}: ${fmt(s.value)}`} style={{ width: `${w}%`, background: s.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {w > 8 && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff" }}>{fmt(s.value)}</span>}
+                </div>
+              );
+            })}
           </div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, color: pal.inkSoft, margin: "8px 0 14px" }}>
+            {stackSegs.map((s) => (
+              <span key={s.key}>
+                <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: s.color, marginRight: 5 }} />
+                {s.key} <strong style={{ color: pal.ink }}>%{Math.round((s.value / stackTotal) * 100)}</strong>
+              </span>
+            ))}
+          </div>
+
+          {/* Çıkarma tablosu */}
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <tbody>
+              {healthRows.map((r, i) => (
+                <tr key={r.key} style={{ borderTop: i === 0 ? "none" : `1px solid ${pal.line}`, background: r.bold ? pal.fieldBg : "transparent" }}>
+                  <td style={{ padding: "8px 8px", width: 26, textAlign: "center", color: r.color, fontWeight: 800 }}>{r.sign}</td>
+                  <td style={{ padding: "8px 8px", fontWeight: r.bold ? 800 : 500 }}>{r.key}</td>
+                  <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: "monospace", fontWeight: r.bold ? 800 : 600, color: r.bold ? r.color : pal.ink }}>
+                    {fmt(r.value)}
+                  </td>
+                  <td style={{ padding: "8px 8px", textAlign: "right", color: pal.inkSoft, width: 60 }}>
+                    %{Math.round((r.value / (live.toplamCihaz || 1)) * 100)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{ ...styles.pageSub, margin: "10px 0 0", fontSize: 11 }}>
+            Sağlıklı cihaz oranı: <strong style={{ color: saglikPct >= 80 ? C.emerald : saglikPct >= 60 ? C.amber : C.coral }}>%{saglikPct}</strong>
+          </p>
         </Card>
 
         {/* ---- Satır 3: Dönemsel Çözüm Performansı — donut + detaylı tablo ---- */}
