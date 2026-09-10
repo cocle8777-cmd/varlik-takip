@@ -41,7 +41,7 @@ function buildMailHtml(recs, thRows = []) {
     .map((r) => {
       const th = thBySerial.get(String(r.serial || "").trim().toLowerCase());
       const cells = [
-        r.serial || "",
+        (th && th.serial) || r.serial || "", // eşleşme varsa TH'deki seri no (kanonik yazım)
         (th && th.barkod) || "",
         r.model || "",
         (th && th.marka) || "",
