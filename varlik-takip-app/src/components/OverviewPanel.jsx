@@ -6,9 +6,34 @@ import { combinedPeriodSummary, waterfallSegments, pctChange } from "../services
 Chart.register(BarController, LineController, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
 
 const PERIOD_LABELS = { month: "Aylık", week: "Haftalık", raw: "Her Yükleme" };
+const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("tr-TR"));
 
-// Minik sparkline (satır içi SVG). values: sayı dizisi.
-function Spark({ values, color, width = 96, height = 26 }) {
+// Çubukların üstüne/içine değer yazan hafif Chart.js eklentisi (datalabels bağımlılığı yok).
+function valueLabelPlugin(pal, pick) {
+  return {
+    id: "vlabels",
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      ctx.save();
+      ctx.font = "600 10px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      chart.data.datasets.forEach((ds, di) => {
+        if (ds.type === "line") return;
+        const meta = chart.getDatasetMeta(di);
+        meta.data.forEach((el, i) => {
+          const raw = pick(di, i);
+          if (raw == null || raw === 0) return;
+          ctx.fillStyle = pal.inkSoft;
+          const y = el.y - 4;
+          ctx.fillText(fmt(raw), el.x, y < 12 ? el.y + 12 : y);
+        });
+      });
+      ctx.restore();
+    },
+  };
+}
+
+function Spark({ values, color, width = 108, height = 30 }) {
   const nums = (values || []).filter((v) => typeof v === "number" && !Number.isNaN(v));
   if (nums.length < 2) return <div style={{ height, width }} />;
   const min = Math.min(...nums);
@@ -17,37 +42,38 @@ function Spark({ values, color, width = 96, height = 26 }) {
   const pts = nums
     .map((v, i) => {
       const x = (i / (nums.length - 1)) * (width - 2) + 1;
-      const y = height - 2 - ((v - min) / span) * (height - 4);
+      const y = height - 3 - ((v - min) / span) * (height - 6);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
+  const last = pts.split(" ").pop().split(",");
   return (
     <svg width={width} height={height} style={{ display: "block" }}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r="2.4" fill={color} />
     </svg>
   );
 }
 
-// Δ rozeti — pp (yüzde puan) ya da % değişim.
 function Delta({ value, unit = "%", goodWhenNegative = true, pal }) {
-  if (value == null) return <span style={{ fontSize: 12, color: pal.inkSoft }}>—</span>;
-  const positive = value > 0;
-  const good = goodWhenNegative ? value < 0 : value > 0;
-  const color = value === 0 ? pal.inkSoft : good ? pal.ok : pal.bad;
+  if (value == null) return <span style={{ fontSize: 11.5, color: pal.inkSoft }}>ilk dönem</span>;
+  const good = value === 0 ? null : goodWhenNegative ? value < 0 : value > 0;
+  const color = good == null ? pal.inkSoft : good ? pal.ok : pal.bad;
+  const arrow = value > 0 ? "▲" : value < 0 ? "▼" : "▬";
   return (
-    <span style={{ fontSize: 12.5, fontWeight: 600, color }}>
-      {positive ? "▲" : value < 0 ? "▼" : "•"} {value > 0 ? "+" : ""}
-      {value}
-      {unit} <span style={{ color: pal.inkSoft, fontWeight: 400 }}>önceki döneme göre</span>
+    <span style={{ fontSize: 11.5, color: pal.inkSoft }}>
+      <span style={{ color, fontWeight: 700 }}>
+        {arrow} {value > 0 ? "+" : ""}
+        {value}
+        {unit}
+      </span>{" "}
+      önceki döneme göre
     </span>
   );
 }
 
-// Ana Sayfa "Genel Durum" paneli (finans dashboard'u referansına göre — bkz. konuşma):
-//  - Cihaz Sağlık Şelalesi (waterfall): Toplam Cihaz → problem kategorileri → Temiz Cihaz
-//  - İki gösterge halkası: Sağlıklı Cihaz Oranı % · Zimmet Uyumu %
-//  - Aylık Bulgu/Çözüm trendi (bar + çizgi)
-//  - KPI kartları: büyük sayı + sparkline + önceki döneme göre değişim
+// Ana Sayfa "Genel Durum" — özet KPI kartları (üstte) + Cihaz Sağlık Şelalesi + Sağlıklı Cihaz
+// göstergesi + dönemsel Bulgu/Çözüm trendi. Finans dashboard referansına uyarlandı (bkz. konuşma).
 export default function OverviewPanel({ snapshots, period, setPeriod, live, styles, pal }) {
   const wfRef = useRef(null);
   const wfChart = useRef(null);
@@ -70,63 +96,63 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
   );
   const temiz = wf[wf.length - 1].value;
   const saglikPct = live.toplamCihaz ? Math.round((temiz / live.toplamCihaz) * 100) : 0;
-  const zimmetToplam = live.zimmetDogru + live.zimmetHatali;
-  const zimmetUyumPct = zimmetToplam ? Math.round((live.zimmetDogru / zimmetToplam) * 100) : 0;
+  const zToplam = live.zimmetDogru + live.zimmetHatali;
+  const zimmetUyumPct = zToplam ? Math.round((live.zimmetDogru / zToplam) * 100) : 0;
+  const acikBulguLive = live.inaktif + live.zimmetHatali + live.kritikDisk + live.kullanilmayan;
 
-  // ---- Waterfall grafiği (Chart.js floating bar) ----
+  // ---- Waterfall ----
   useEffect(() => {
     if (!wfRef.current) return;
     if (wfChart.current) wfChart.current.destroy();
     let running = wf[0].value;
-    const bars = wf.map((s, i) => {
-      if (s.kind === "total") return [0, s.value];
-      if (s.kind === "result") return [0, s.value];
+    const bars = wf.map((s) => {
+      if (s.kind === "total" || s.kind === "result") return [0, s.value];
       const bottom = Math.max(0, running - s.value);
-      const range = [bottom, running];
+      const r = [bottom, running];
       running = bottom;
-      return range;
+      return r;
     });
     const colors = wf.map((s) => (s.kind === "total" ? pal.inkSoft : s.kind === "result" ? pal.ok : pal.bad));
     wfChart.current = new Chart(wfRef.current, {
       type: "bar",
-      data: {
-        labels: wf.map((s) => s.key),
-        datasets: [{ data: bars, backgroundColor: colors, borderRadius: 4, barPercentage: 0.62 }],
-      },
+      data: { labels: wf.map((s) => s.key), datasets: [{ data: bars, backgroundColor: colors, borderRadius: 5, barPercentage: 0.6 }] },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 18 } },
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: (c) => `${c.label}: ${wf[c.dataIndex].value.toLocaleString("tr-TR")}` } },
+          tooltip: { callbacks: { label: (c) => `${c.label}: ${fmt(wf[c.dataIndex].value)}` } },
         },
         scales: {
-          x: { ticks: { color: pal.inkSoft, font: { size: 10 }, maxRotation: 20, minRotation: 0 }, grid: { display: false } },
+          x: { ticks: { color: pal.inkSoft, font: { size: 10 }, maxRotation: 18, minRotation: 0 }, grid: { display: false } },
           y: { beginAtZero: true, ticks: { color: pal.inkSoft, font: { size: 10 } }, grid: { color: pal.line } },
         },
       },
+      plugins: [valueLabelPlugin(pal, (_di, i) => wf[i].value)],
     });
     return () => wfChart.current && wfChart.current.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(wf), pal]);
 
-  // ---- Aylık trend grafiği (Yeni Tespit + Çözülen bar, Çözüm Oranı çizgi) ----
+  // ---- Aylık trend ----
   useEffect(() => {
     if (!trendRef.current || !enough) return;
     if (trendChart.current) trendChart.current.destroy();
-    const pts = series.slice(1); // ilk dönemde önceki yok → karşılaştırma boş
+    const pts = series.slice(1);
     trendChart.current = new Chart(trendRef.current, {
       data: {
         labels: pts.map((p) => p.label),
         datasets: [
-          { type: "bar", label: "Yeni Tespit", data: pts.map((p) => p.yeni), backgroundColor: pal.bad, borderRadius: 3, yAxisID: "y" },
-          { type: "bar", label: "Çözülen", data: pts.map((p) => p.cozulen), backgroundColor: pal.ok, borderRadius: 3, yAxisID: "y" },
-          { type: "line", label: "Çözüm Oranı %", data: pts.map((p) => p.cozumOrani), borderColor: pal.accent, backgroundColor: pal.accent, tension: 0.35, pointRadius: 3, yAxisID: "y1" },
+          { type: "bar", label: "Yeni Tespit", data: pts.map((p) => p.yeni), backgroundColor: pal.bad, borderRadius: 4, yAxisID: "y" },
+          { type: "bar", label: "Çözülen", data: pts.map((p) => p.cozulen), backgroundColor: pal.ok, borderRadius: 4, yAxisID: "y" },
+          { type: "line", label: "Çözüm Oranı %", data: pts.map((p) => p.cozumOrani), borderColor: pal.accent, backgroundColor: pal.accent, borderWidth: 2, tension: 0.35, pointRadius: 3, yAxisID: "y1" },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 16 } },
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { position: "top", labels: { color: pal.ink, boxWidth: 10, font: { size: 11 } } } },
         scales: {
@@ -135,17 +161,18 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
           y1: { position: "right", beginAtZero: true, max: 100, ticks: { color: pal.inkSoft, font: { size: 10 }, callback: (v) => `${v}%` }, grid: { display: false } },
         },
       },
+      plugins: [valueLabelPlugin(pal, (di, i) => (di < 2 ? pts[i][di === 0 ? "yeni" : "cozulen"] : null))],
     });
     return () => trendChart.current && trendChart.current.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(series), enough, pal]);
 
-  const card = (label, value, { spark, sparkColor, delta, deltaUnit, deltaGoodNeg = true, valueColor } = {}) => (
-    <div style={{ ...styles.kpiCard, gap: 4 }}>
-      <span style={styles.kpiLabel}>{label}</span>
-      <span style={{ ...styles.kpiValue, color: valueColor || pal.ink }}>{value}</span>
-      {spark && spark.length >= 2 && <Spark values={spark} color={sparkColor || pal.accent} />}
-      {delta !== undefined && <Delta value={delta} unit={deltaUnit} goodWhenNegative={deltaGoodNeg} pal={pal} />}
+  const Kpi = ({ label, value, valueColor, spark, sparkColor, delta, deltaUnit, deltaGoodNeg = true, note }) => (
+    <div style={{ ...styles.kpiCard, gap: 6, minHeight: 108 }}>
+      <span style={{ ...styles.kpiLabel, textTransform: "uppercase", letterSpacing: "0.04em", fontSize: 10.5 }}>{label}</span>
+      <span style={{ ...styles.kpiValue, color: valueColor || pal.ink, fontSize: 26 }}>{value}</span>
+      {spark && spark.length >= 2 ? <Spark values={spark} color={sparkColor || pal.accent} /> : <div style={{ height: 30 }} />}
+      {note ? <span style={{ fontSize: 11.5, color: pal.inkSoft }}>{note}</span> : <Delta value={delta} unit={deltaUnit} goodWhenNegative={deltaGoodNeg} pal={pal} />}
     </div>
   );
 
@@ -155,7 +182,7 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
         <div>
           <p style={styles.settingsSectionTitle}>Genel Durum</p>
           <p style={{ ...styles.pageSub, margin: 0 }}>
-            Toplam cihazdan problem kategorileri düşülünce kalan "temiz" cihaz oranı, zimmet uyumu ve dönemsel bulgu/çözüm trendi
+            Cihaz envanterinin sağlık özeti ve IT operasyonlarının dönemsel bulgu/çözüm performansı
           </p>
         </div>
         <div style={styles.segmented}>
@@ -167,93 +194,67 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
         </div>
       </div>
 
-      {/* Satır A: waterfall + iki gösterge halkası */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)", gap: 16, marginTop: 16, alignItems: "center" }}>
+      {/* Özet KPI şeridi */}
+      <div style={{ ...styles.kpiGrid, gridTemplateColumns: "repeat(auto-fit, minmax(158px, 1fr))", marginTop: 16 }}>
+        <Kpi label="Toplam Cihaz" value={fmt(live.toplamCihaz)} note="SCCM envanteri" />
+        <Kpi label="Açık Bulgu" value={fmt(latest ? latest.acikBulgu : acikBulguLive)} valueColor={pal.bad}
+          spark={series.map((s) => s.acikBulgu)} sparkColor={pal.bad}
+          delta={latest && prev ? pctChange(latest.acikBulgu, prev.acikBulgu) : null} deltaUnit="%" deltaGoodNeg />
+        <Kpi label="Çözüm Oranı" value={latest && latest.cozumOrani != null ? `%${latest.cozumOrani}` : "—"}
+          valueColor={pal.ok} spark={series.map((s) => s.cozumOrani).filter((v) => v != null)} sparkColor={pal.ok}
+          delta={latest && prev && latest.cozumOrani != null && prev.cozumOrani != null ? Math.round((latest.cozumOrani - prev.cozumOrani) * 10) / 10 : null}
+          deltaUnit=" pp" deltaGoodNeg={false} />
+        <Kpi label="Sağlıklı Cihaz" value={`%${saglikPct}`} valueColor={saglikPct >= 80 ? pal.ok : saglikPct >= 60 ? pal.warnFg : pal.bad}
+          spark={series.map((s) => (live.toplamCihaz ? Math.round(((live.toplamCihaz - s.acikBulgu) / live.toplamCihaz) * 100) : 0))}
+          sparkColor={pal.ok} note="temiz / toplam" />
+        <Kpi label="Zimmet Uyumu" value={`%${zimmetUyumPct}`} valueColor={zimmetUyumPct >= 90 ? pal.ok : zimmetUyumPct >= 75 ? pal.warnFg : pal.bad}
+          note={`${fmt(live.zimmetDogru)} doğru / ${fmt(live.zimmetHatali)} hatalı`} />
+        <Kpi label="Bu Dönem Net" value={latest ? (latest.netDegisim > 0 ? `+${latest.netDegisim}` : latest.netDegisim) : "—"}
+          valueColor={latest && latest.netDegisim > 0 ? pal.bad : pal.ok} note="yeni − çözülen" />
+      </div>
+
+      {/* Şelale + Sağlıklı Cihaz göstergesi */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.9fr) minmax(0, 1fr)", gap: 18, marginTop: 22, alignItems: "stretch" }}>
         <div>
-          <p style={{ ...styles.pageSub, margin: "0 0 6px", fontWeight: 600, color: pal.ink }}>Cihaz Sağlık Şelalesi</p>
-          <div style={{ height: 220 }}>
+          <p style={{ ...styles.pageSub, margin: "0 0 4px", fontWeight: 600, color: pal.ink }}>Cihaz Sağlık Şelalesi</p>
+          <p style={{ ...styles.pageSub, margin: "0 0 8px", fontSize: 11.5 }}>
+            Toplam {fmt(live.toplamCihaz)} cihaz → problem kategorileri çıkarılınca kalan "temiz" cihaz (kategoriler çakışabilir)
+          </p>
+          <div style={{ height: 250 }}>
             <canvas ref={wfRef} />
           </div>
-          <p style={{ ...styles.pageSub, margin: "6px 0 0", fontSize: 11.5 }}>
-            Toplam {live.toplamCihaz.toLocaleString("tr-TR")} cihaz · problem kategorileri çakışabilir, "Temiz" = toplam − kategoriler toplamı
-          </p>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, border: `1px solid ${pal.line}`, borderRadius: 12, padding: 16 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: pal.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>Sağlıklı Cihaz Oranı</span>
           <Donut
-            size={132}
-            thickness={16}
+            size={168}
+            thickness={20}
             segments={[
               { value: temiz, color: pal.ok, label: "Temiz" },
               { value: Math.max(0, live.toplamCihaz - temiz), color: pal.bad, label: "Problemli" },
             ]}
             trackColor={pal.fieldBg}
             centerLabel={`%${saglikPct}`}
+            centerSub={`${fmt(temiz)} / ${fmt(live.toplamCihaz)}`}
           />
-          <span style={{ fontSize: 12.5, fontWeight: 600 }}>Sağlıklı Cihaz Oranı</span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <Donut
-            size={132}
-            thickness={16}
-            segments={[
-              { value: live.zimmetDogru, color: pal.ok, label: "Doğru" },
-              { value: live.zimmetHatali, color: pal.bad, label: "Hatalı" },
-            ]}
-            trackColor={pal.fieldBg}
-            centerLabel={`%${zimmetUyumPct}`}
-          />
-          <span style={{ fontSize: 12.5, fontWeight: 600 }}>Zimmet Uyumu</span>
+          <span style={{ fontSize: 12.5 }}>
+            Zimmet uyumu: <strong style={{ color: zimmetUyumPct >= 90 ? pal.ok : pal.warnFg }}>%{zimmetUyumPct}</strong>
+          </span>
         </div>
       </div>
 
-      {/* Satır B: aylık bulgu/çözüm trendi */}
-      <div style={{ marginTop: 20 }}>
-        <p style={{ ...styles.pageSub, margin: "0 0 6px", fontWeight: 600, color: pal.ink }}>
+      {/* Aylık bulgu/çözüm trendi */}
+      <div style={{ marginTop: 22 }}>
+        <p style={{ ...styles.pageSub, margin: "0 0 8px", fontWeight: 600, color: pal.ink }}>
           {PERIOD_LABELS[period]} Bulgu / Çözüm Trendi
         </p>
         {enough ? (
-          <div style={{ height: 230 }}>
+          <div style={{ height: 240 }}>
             <canvas ref={trendRef} />
           </div>
         ) : (
-          <p style={{ ...styles.pageSub, margin: 0 }}>
-            Trend için en az 2 dönem verisi gerekli — snapshot geçmişi biriktikçe dolacak.
-          </p>
+          <p style={{ ...styles.pageSub, margin: 0 }}>Trend için en az 2 dönem verisi gerekli — snapshot geçmişi biriktikçe dolacak.</p>
         )}
-      </div>
-
-      {/* Satır C: KPI kartları */}
-      <div style={{ ...styles.kpiGrid, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", marginTop: 18 }}>
-        {card("Açık Bulgu (toplam)", latest ? latest.acikBulgu.toLocaleString("tr-TR") : "—", {
-          spark: series.map((s) => s.acikBulgu),
-          sparkColor: pal.bad,
-          delta: latest && prev ? pctChange(latest.acikBulgu, prev.acikBulgu) : undefined,
-          deltaUnit: "%",
-          deltaGoodNeg: true,
-        })}
-        {card("Çözüm Oranı", latest && latest.cozumOrani != null ? `%${latest.cozumOrani}` : "—", {
-          spark: series.map((s) => s.cozumOrani).filter((v) => v != null),
-          sparkColor: pal.ok,
-          delta: latest && prev && latest.cozumOrani != null && prev.cozumOrani != null ? Math.round((latest.cozumOrani - prev.cozumOrani) * 10) / 10 : undefined,
-          deltaUnit: " pp",
-          deltaGoodNeg: false,
-        })}
-        {card("Bu Dönem Çözülen", latest ? latest.cozulen : "—", {
-          valueColor: pal.ok,
-          delta: latest && prev ? latest.cozulen - prev.cozulen : undefined,
-          deltaUnit: "",
-          deltaGoodNeg: false,
-        })}
-        {card("Bu Dönem Yeni Tespit", latest ? latest.yeni : "—", {
-          valueColor: pal.bad,
-          delta: latest && prev ? latest.yeni - prev.yeni : undefined,
-          deltaUnit: "",
-          deltaGoodNeg: true,
-        })}
-        {card("Net Değişim", latest ? (latest.netDegisim > 0 ? `+${latest.netDegisim}` : latest.netDegisim) : "—", {
-          valueColor: latest && latest.netDegisim > 0 ? pal.bad : pal.ok,
-        })}
-        {card("Zimmet Uyumu", `%${zimmetUyumPct}`, { valueColor: zimmetUyumPct >= 90 ? pal.ok : zimmetUyumPct >= 75 ? pal.warnFg : pal.bad })}
       </div>
     </div>
   );
