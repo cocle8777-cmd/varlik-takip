@@ -167,7 +167,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
 
   const targetRecs = useMemo(() => (selected.size > 0 ? records.filter((r) => selected.has(r.id)) : records), [records, selected]);
 
-  // SERİ NO yazılınca TuruncuHat'tan otomatik doldurma (boş alanlar) — bkz. konuşma.
+  // SERİ NO — yazarken TuruncuHat'tan seri no önerisi, seçilince SADECE Model otomatik dolar.
   const thBySerial = useMemo(() => {
     const m = new Map();
     thRows.forEach((t) => {
@@ -176,33 +176,32 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
     });
     return m;
   }, [thRows]);
-  const [thHit, setThHit] = useState(null); // { found, owner, model }
 
-  useEffect(() => {
-    if (editingId) {
-      setThHit(null);
-      return;
-    }
-    const s = norm(form.serial);
-    if (s.length < 4) {
-      setThHit(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      const th = thBySerial.get(s);
-      if (!th) {
-        setThHit({ found: false });
-        return;
+  // yazılan öneki içeren seri numaraları (öneri listesi, en çok 50)
+  const serialSuggestions = useMemo(() => {
+    const q = norm(form.serial);
+    if (q.length < 2 || !thRows.length) return [];
+    const seen = new Set();
+    const out = [];
+    for (const t of thRows) {
+      const s = norm(t.serial);
+      if (!s || seen.has(s)) continue;
+      if (s.startsWith(q) || s.includes(q)) {
+        seen.add(s);
+        out.push(t);
+        if (out.length >= 50) break;
       }
-      setThHit({ found: true, owner: th.ownerFull || th.owner, model: th.model || th.asset });
-      setForm((p) => ({
-        ...p,
-        model: p.model || th.model || th.asset || [th.marka, th.deviceType].filter(Boolean).join(" "),
-        location: p.location || (th.location && th.location !== "—" ? th.location : ""),
-        userInfo: p.userInfo || [th.ownerFull || th.owner, th.ownerSicil].filter(Boolean).join(" / "),
-      }));
-    }, 350);
-    return () => clearTimeout(timer);
+    }
+    return out;
+  }, [form.serial, thRows]);
+
+  // Seri no TAM eşleşince yalnızca MODEL alanını TH'den doldur (diğer alanlara dokunma).
+  useEffect(() => {
+    if (editingId) return;
+    const th = thBySerial.get(norm(form.serial));
+    if (!th) return;
+    const model = th.deviceType || th.model || th.asset || "";
+    setForm((p) => (p.model === model ? p : { ...p, model }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.serial, thBySerial, editingId]);
 
@@ -335,21 +334,41 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                     onChange={(e) => setF(f.k, e.target.value)}
                     style={{ ...inp, resize: "vertical", fontFamily: "inherit" }}
                   />
+                ) : f.k === "serial" ? (
+                  <>
+                    <input
+                      list="ni-serial-list"
+                      value={form.serial}
+                      onChange={(e) => setF("serial", e.target.value)}
+                      style={inp}
+                      placeholder="SYNP… yazın, listeden seçin"
+                      autoComplete="off"
+                    />
+                    <datalist id="ni-serial-list">
+                      {serialSuggestions.map((t) => (
+                        <option key={t.serial} value={t.serial}>
+                          {`${t.serial} — ${t.deviceType || t.model || ""}${t.ownerFull ? ` — ${t.ownerFull}` : ""}`}
+                        </option>
+                      ))}
+                    </datalist>
+                    {!editingId && norm(form.serial).length >= 2 && (
+                      <p style={{ margin: "3px 0 0", fontSize: 11.5, color: pal.inkSoft }}>
+                        {thBySerial.has(norm(form.serial))
+                          ? "✓ TuruncuHat'ta bulundu — Model otomatik dolduruldu"
+                          : serialSuggestions.length
+                          ? `${serialSuggestions.length} eşleşme — listeden seçin`
+                          : "TuruncuHat'ta eşleşme yok"}
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <input
                     type={f.type || "text"}
                     value={form[f.k]}
                     onChange={(e) => setF(f.k, e.target.value)}
                     style={inp}
-                    placeholder={f.k === "hostname" ? "THY-LAP-…" : f.k === "serial" ? "PF3… (TH'den otomatik doldurur)" : ""}
+                    placeholder={f.k === "hostname" ? "THY-LAP-…" : ""}
                   />
-                )}
-                {f.k === "serial" && thHit && !editingId && (
-                  <p style={{ margin: "3px 0 0", fontSize: 11.5, color: thHit.found ? pal.ok : pal.inkSoft }}>
-                    {thHit.found
-                      ? `✓ TuruncuHat: ${thHit.owner || "—"}${thHit.model ? ` · ${thHit.model}` : ""} — boş alanlar dolduruldu`
-                      : "TuruncuHat'ta bu seri no bulunamadı"}
-                  </p>
                 )}
               </div>
             );
