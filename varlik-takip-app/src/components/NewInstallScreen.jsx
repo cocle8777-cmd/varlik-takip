@@ -346,9 +346,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                     />
                     <datalist id="ni-serial-list">
                       {serialSuggestions.map((t) => (
-                        <option key={t.serial} value={t.serial}>
-                          {`${t.serial} — ${t.deviceType || t.model || ""}${t.ownerFull ? ` — ${t.ownerFull}` : ""}`}
-                        </option>
+                        <option key={t.serial} value={t.serial} />
                       ))}
                     </datalist>
                     {!editingId && norm(form.serial).length >= 2 && (
