@@ -128,6 +128,8 @@ export default function App({ user, onLogout } = {}) {
   const [mgmtLbsFilter, setMgmtLbsFilter] = useState([]); // üst lokasyon çoklu seçim
   const [showSettings, setShowSettings] = useState(false);
   const [settingsUnlocked, setSettingsUnlocked] = useState(false);
+  // Ayarlar alt sekmeleri (kullanıcı isteği): Lokasyon Mailleri / SMTP / Veri Input
+  const [settingsTab, setSettingsTab] = useState("lokasyon"); // lokasyon | smtp | veri
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -1614,6 +1616,16 @@ IT Support`;
     if (folder) setFileSourceConfig({ folderPath: folder });
   };
 
+  // LakeSide batarya raporu klasörü — Dosya Kaynağı'ndaki "Gözat…" ile aynı desen (masaüstü .exe).
+  const pickLakesideFolder = async () => {
+    if (!window.varlikTakipDesktop?.pickFolder) {
+      showToast("Klasör seçme sadece masaüstü uygulamasında (.exe) çalışır — geliştirme modunda yolu elle yazmalısın");
+      return;
+    }
+    const folder = await window.varlikTakipDesktop.pickFolder();
+    if (folder) setAppConfig((prev) => ({ ...prev, lakesideBatterySource: { folderPath: folder } }));
+  };
+
   const loadRealInaktifData = async ({ silent = false } = {}) => {
     setLoadingRealInaktif(true);
     try {
@@ -2535,15 +2547,23 @@ IT Support`;
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <p style={styles.pageTitle}>Ayarlar</p>
-                    <p style={styles.pageSub}>Bildirim tercihleri ve zamanlanmış tarama (demo — henüz gerçek gönderim/otomasyon yok)</p>
+                    <p style={styles.pageSub}>Lokasyon mailleri, SMTP ve veri girişi ayarları</p>
                   </div>
                   <button style={styles.btnGhost} onClick={handleSettingsLogout}>Çıkış Yap</button>
                 </div>
+                <div style={{ ...styles.segmented, marginTop: 16 }}>
+                  {[["lokasyon", "Lokasyon Mailleri"], ["smtp", "SMTP"], ["veri", "Veri Input"]].map(([id, label]) => (
+                    <div key={id} onClick={() => setSettingsTab(id)} style={{ ...styles.seg, ...(settingsTab === id ? styles.segActive : {}) }}>
+                      {label}
+                    </div>
+                  ))}
+                </div>
               </div>
 
+              {settingsTab === "smtp" && (
               <div style={{ ...styles.panel, padding: "20px 24px" }}>
-                <p style={styles.pageTitle}>Mail</p>
-                <p style={styles.pageSub}>SMTP sunucu ayarları ve İnaktif Cihazlar lokasyon-mail eşleşmeleri</p>
+                <p style={styles.pageTitle}>SMTP</p>
+                <p style={styles.pageSub}>Rapor ve uyuşmazlık maillerinin gönderileceği SMTP sunucu bilgileri ve test maili</p>
 
                 <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
                 <div style={styles.settingsSectionHead}>
@@ -2651,6 +2671,14 @@ IT Support`;
                   </div>
                 </div>
                 </div>
+              </div>
+              )}
+
+              {settingsTab === "lokasyon" && (
+              <>
+              <div style={{ ...styles.panel, padding: "20px 24px" }}>
+                <p style={styles.pageTitle}>Lokasyon Mailleri</p>
+                <p style={styles.pageSub}>İnaktif ve Kullanılmayan Cihazlar raporlarının lokasyon bazlı mail dağıtımı ve departman bildirim tercihleri</p>
 
                 <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
                 <div style={styles.settingsSectionHead}>
@@ -2727,6 +2755,15 @@ IT Support`;
                     ))}
                   </tbody>
                 </table>
+              </div>
+              </>
+              )}
+
+              {settingsTab === "veri" && (
+              <>
+              <div style={{ ...styles.panel, padding: "20px 24px" }}>
+                <p style={styles.pageTitle}>Veri Input</p>
+                <p style={styles.pageSub}>Rapor verilerinin geldiği kaynaklar: API bağlantısı, SharePoint Excel klasörü, TuruncuHat / Monitor dosyaları, Kullanılmayan Cihazlar &amp; LakeSide batarya ve zamanlanmış otomatik tarama</p>
               </div>
 
               <div style={{ ...styles.panel, padding: "20px 24px" }}>
@@ -3015,13 +3052,16 @@ IT Support`;
                   </div>
                   <div style={styles.formFieldWide}>
                     <label style={styles.formLabel}>LakeSide Batarya Raporu — Klasör Yolu (opsiyonel, henüz bağlı değil)</label>
-                    <input
-                      type="text"
-                      placeholder={"C:\\Users\\...\\LakeSide\\BatteryHealth"}
-                      value={appConfig.lakesideBatterySource?.folderPath || ""}
-                      onChange={(e) => setAppConfig((prev) => ({ ...prev, lakesideBatterySource: { folderPath: e.target.value } }))}
-                      style={{ ...styles.formInput }}
-                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        type="text"
+                        placeholder={"C:\\Users\\...\\LakeSide\\BatteryHealth"}
+                        value={appConfig.lakesideBatterySource?.folderPath || ""}
+                        onChange={(e) => setAppConfig((prev) => ({ ...prev, lakesideBatterySource: { folderPath: e.target.value } }))}
+                        style={{ ...styles.formInput, flex: 1 }}
+                      />
+                      <button type="button" style={styles.btnGhost} onClick={pickLakesideFolder}>Gözat…</button>
+                    </div>
                   </div>
                 </div>
                 <div style={styles.formActions}>
@@ -3030,6 +3070,8 @@ IT Support`;
                   </button>
                 </div>
               </div>
+              </>
+              )}
 
             </>
             )
