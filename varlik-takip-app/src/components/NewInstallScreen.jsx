@@ -40,13 +40,15 @@ function buildMailHtml(recs, thRows = []) {
   const body = recs
     .map((r) => {
       const th = thBySerial.get(String(r.serial || "").trim().toLowerCase());
+      // Sütun kaynakları (kullanıcı onayı): Seri No/Barkod/Model/Marka/Varlık Kataloğu → TH;
+      // Varlık Transfer Emri → form ATO NUMARASI.
       const cells = [
-        (th && th.serial) || r.serial || "", // eşleşme varsa TH'deki seri no (kanonik yazım)
-        (th && th.barkod) || "",
-        r.model || "",
-        (th && th.marka) || "",
-        (th && (th.asset || th.model)) || "", // Varlık Kataloğu = TH "Asset" sütunu
-        r.atoNo || "",
+        (th && th.serial) || r.serial || "", // TH → SERİ NO
+        (th && th.barkod) || "", // TH → Varlık Barkodu
+        (th && th.deviceType) || "", // TH → "Model" sütunu
+        (th && th.marka) || "", // TH → Marka
+        (th && (th.asset || th.model)) || "", // TH → Asset (Varlık Kataloğu)
+        r.atoNo || "", // form → ATO NUMARASI
       ];
       return `<tr>${cells.map((c) => `<td style="border:1px solid #000;padding:6px 10px;">${esc(c)}</td>`).join("")}</tr>`;
     })
@@ -164,6 +166,45 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
   };
 
   const targetRecs = useMemo(() => (selected.size > 0 ? records.filter((r) => selected.has(r.id)) : records), [records, selected]);
+
+  // SERİ NO yazılınca TuruncuHat'tan otomatik doldurma (boş alanlar) — bkz. konuşma.
+  const thBySerial = useMemo(() => {
+    const m = new Map();
+    thRows.forEach((t) => {
+      const k = norm(t.serial);
+      if (k) m.set(k, t);
+    });
+    return m;
+  }, [thRows]);
+  const [thHit, setThHit] = useState(null); // { found, owner, model }
+
+  useEffect(() => {
+    if (editingId) {
+      setThHit(null);
+      return;
+    }
+    const s = norm(form.serial);
+    if (s.length < 4) {
+      setThHit(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const th = thBySerial.get(s);
+      if (!th) {
+        setThHit({ found: false });
+        return;
+      }
+      setThHit({ found: true, owner: th.ownerFull || th.owner, model: th.model || th.asset });
+      setForm((p) => ({
+        ...p,
+        model: p.model || th.model || th.asset || [th.marka, th.deviceType].filter(Boolean).join(" "),
+        location: p.location || (th.location && th.location !== "—" ? th.location : ""),
+        userInfo: p.userInfo || [th.ownerFull || th.owner, th.ownerSicil].filter(Boolean).join(" / "),
+      }));
+    }, 350);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.serial, thBySerial, editingId]);
 
   // İADELER — girilen kişi adına (SCCM tam ad) göre TH zimmetindeki fiziksel cihazlar.
   const returnMatches = useMemo(() => {
@@ -300,8 +341,15 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                     value={form[f.k]}
                     onChange={(e) => setF(f.k, e.target.value)}
                     style={inp}
-                    placeholder={f.k === "hostname" ? "THY-LAP-…" : f.k === "serial" ? "PF3…" : ""}
+                    placeholder={f.k === "hostname" ? "THY-LAP-…" : f.k === "serial" ? "PF3… (TH'den otomatik doldurur)" : ""}
                   />
+                )}
+                {f.k === "serial" && thHit && !editingId && (
+                  <p style={{ margin: "3px 0 0", fontSize: 11.5, color: thHit.found ? pal.ok : pal.inkSoft }}>
+                    {thHit.found
+                      ? `✓ TuruncuHat: ${thHit.owner || "—"}${thHit.model ? ` · ${thHit.model}` : ""} — boş alanlar dolduruldu`
+                      : "TuruncuHat'ta bu seri no bulunamadı"}
+                  </p>
                 )}
               </div>
             );
