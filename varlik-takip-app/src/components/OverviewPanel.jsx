@@ -57,8 +57,6 @@ function DeltaTag({ value, unit = "%", goodWhenNegative = true, pal }) {
 export default function OverviewPanel({ snapshots, period, setPeriod, live, styles, pal }) {
   const wfRef = useRef(null);
   const wfChart = useRef(null);
-  const trendRef = useRef(null);
-  const trendChart = useRef(null);
 
   const summary = useMemo(() => combinedPeriodSummary(snapshots, period), [snapshots, period]);
   const { series, latest, prev, enough } = summary;
@@ -120,35 +118,13 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(wf), pal]);
 
-  // ---- Aylık trend (navy + amber bar, çizgi) ----
-  useEffect(() => {
-    if (!trendRef.current || !enough) return;
-    if (trendChart.current) trendChart.current.destroy();
-    const pts = series.slice(1);
-    trendChart.current = new Chart(trendRef.current, {
-      data: {
-        labels: pts.map((p) => p.label),
-        datasets: [
-          { type: "bar", label: "Yeni Tespit", data: pts.map((p) => p.yeni), backgroundColor: C.navy, borderRadius: 4, yAxisID: "y" },
-          { type: "bar", label: "Çözülen", data: pts.map((p) => p.cozulen), backgroundColor: C.amber, borderRadius: 4, yAxisID: "y" },
-          { type: "line", label: "Çözüm Oranı %", data: pts.map((p) => p.cozumOrani), borderColor: C.teal, backgroundColor: C.teal, borderWidth: 2, tension: 0.35, pointRadius: 3, yAxisID: "y1" },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: { legend: { position: "top", labels: { color: pal.ink, boxWidth: 10, font: { size: 11 } } } },
-        scales: {
-          x: { ticks: { color: pal.inkSoft, font: { size: 10 } }, grid: { display: false } },
-          y: { beginAtZero: true, ticks: { color: pal.inkSoft, font: { size: 10 } }, grid: { color: pal.line } },
-          y1: { position: "right", beginAtZero: true, max: 100, ticks: { color: pal.inkSoft, font: { size: 10 }, callback: (v) => `${v}%` }, grid: { display: false } },
-        },
-      },
-    });
-    return () => trendChart.current && trendChart.current.destroy();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(series), enough, pal]);
+  // Aylık trend artık grafik değil, dönem dönem OKUNAKLI satırlar (bkz. konuşma: "çok büyük,
+  // anlaşılır değil"). Her satır: dönem etiketi + Çözülen/Devam/Yeni oranlı yatay çubuk + Çözüm Oranı %.
+  const trendRows = useMemo(() => {
+    const pts = series.slice(1); // ilk dönemin öncesi yok
+    const maxTotal = Math.max(1, ...pts.map((p) => p.cozulen + p.devam + p.yeni));
+    return pts.map((p) => ({ ...p, maxTotal }));
+  }, [series]);
 
   const Card = ({ title, accent, minW = 300, grow = 1, children }) => (
     <div style={{ flex: `${grow} 1 ${minW}px`, minWidth: 0, border: `1px solid ${pal.line}`, borderRadius: 14, background: pal.panelSolid || pal.panel, padding: "14px 16px", boxShadow: pal.shadow }}>
@@ -276,15 +252,48 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
           </div>
         </Card>
 
-        {/* Aylık Bulgu / Çözüm — LACİVERT + KEHRIBAR bar + çizgi (tam satır) */}
+        {/* Dönemsel Çözüm Performansı — dönem dönem okunaklı satırlar (LACİVERT) */}
         <div style={{ flex: "1 1 100%", minWidth: 0 }}>
-          <Card title={`${PERIOD_LABELS[period]} Bulgu / Çözüm Trendi`} accent={C.navy}>
+          <Card title={`${PERIOD_LABELS[period]} Çözüm Performansı`} accent={C.navy}>
             {enough ? (
-              <div style={{ height: 250, minWidth: 0 }}>
-                <canvas ref={trendRef} />
-              </div>
+              <>
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 11.5, color: pal.inkSoft, marginBottom: 10 }}>
+                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.emerald, marginRight: 5 }} />Çözülen (önceki dönemden düştü)</span>
+                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.slate, marginRight: 5 }} />Devam Eden</span>
+                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.coral, marginRight: 5 }} />Yeni Tespit</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {trendRows.map((p) => {
+                    const tot = p.cozulen + p.devam + p.yeni;
+                    const barW = Math.round((tot / p.maxTotal) * 100);
+                    const seg = (v) => (tot ? `${(v / tot) * 100}%` : "0%");
+                    const okColor = p.cozumOrani == null ? pal.inkSoft : p.cozumOrani >= 50 ? C.emerald : p.cozumOrani >= 25 ? C.amber : C.coral;
+                    return (
+                      <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ width: 70, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{p.label}</span>
+                        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ flex: 1, minWidth: 0, height: 18, borderRadius: 5, background: pal.fieldBg, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${barW}%`, display: "flex", borderRadius: 5, overflow: "hidden" }}>
+                              <div style={{ width: seg(p.cozulen), background: C.emerald }} title={`Çözülen: ${p.cozulen}`} />
+                              <div style={{ width: seg(p.devam), background: C.slate }} title={`Devam Eden: ${p.devam}`} />
+                              <div style={{ width: seg(p.yeni), background: C.coral }} title={`Yeni: ${p.yeni}`} />
+                            </div>
+                          </div>
+                          <span style={{ fontSize: 12, color: pal.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}>
+                            <strong style={{ color: C.emerald }}>{fmt(p.cozulen)}</strong> çöz · <strong>{fmt(p.devam)}</strong> devam · <strong style={{ color: C.coral }}>{fmt(p.yeni)}</strong> yeni
+                          </span>
+                        </div>
+                        <span style={{ width: 92, flexShrink: 0, textAlign: "right" }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: okColor, fontFamily: "monospace" }}>{p.cozumOrani != null ? `%${p.cozumOrani}` : "—"}</span>
+                          <span style={{ display: "block", fontSize: 10, color: pal.inkSoft }}>çözüm oranı</span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             ) : (
-              <p style={{ ...styles.pageSub, margin: 0 }}>Trend için en az 2 dönem verisi gerekli — snapshot geçmişi biriktikçe dolacak.</p>
+              <p style={{ ...styles.pageSub, margin: 0 }}>En az 2 dönem verisi gerekli — snapshot geçmişi biriktikçe dolacak.</p>
             )}
           </Card>
         </div>
