@@ -3545,6 +3545,7 @@ IT Support`;
               pal={pal}
               user={user}
               locationOptions={installLocations}
+              thRows={realThAll}
               mailGroupsText={mailGroupsText}
               recordMailHistory={recordMailHistory}
               showToast={showToast}

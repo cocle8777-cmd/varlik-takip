@@ -44,7 +44,17 @@ function buildMailHtml(recs) {
   </div>`;
 }
 
-export default function NewInstallScreen({ styles, pal, user, locationOptions = [], mailGroupsText, recordMailHistory, showToast }) {
+const norm = (v) => String(v || "").trim().toLowerCase();
+// TH satırından "kişiye zimmetli fiziksel cihaz" mı? (User zimmeti + Desktop/Laptop/Notebook/Monitor)
+const isPersonDevice = (r) => {
+  const at = norm(r.assignmentType);
+  const dt = norm(r.deviceType);
+  if (at && at !== "user") return false;
+  return /desktop|laptop|notebook|monitor|tablet/.test(dt) || !dt;
+};
+
+export default function NewInstallScreen({ styles, pal, user, locationOptions = [], thRows = [], mailGroupsText, recordMailHistory, showToast }) {
+  const [returnQuery, setReturnQuery] = useState("");
   const [records, setRecords] = useState([]);
   const [excelPath, setExcelPath] = useState("");
   const [form, setForm] = useState(() => emptyForm(user?.username));
@@ -134,6 +144,22 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
 
   const targetRecs = useMemo(() => (selected.size > 0 ? records.filter((r) => selected.has(r.id)) : records), [records, selected]);
 
+  // İADELER — girilen kişi adına (SCCM tam ad) göre TH zimmetindeki fiziksel cihazlar.
+  const returnMatches = useMemo(() => {
+    const q = norm(returnQuery);
+    if (q.length < 2 || !thRows.length) return [];
+    // Her arama kelimesi, sahibin adında TAM kelime olarak geçmeli ("005" → "0053"e takılmasın).
+    const terms = q.split(/\s+/).filter(Boolean);
+    const res = terms.map((t) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "iu"));
+    return thRows
+      .filter((r) => {
+        if (!isPersonDevice(r)) return false;
+        const hay = norm(`${r.ownerFull} ${r.owner} ${r.ownerUsername} ${r.ownerSicil}`);
+        return res.every((re) => re.test(" " + hay));
+      })
+      .slice(0, 40);
+  }, [returnQuery, thRows]);
+
   const sendMail = async () => {
     if (targetRecs.length === 0) {
       showToast("Gönderilecek kayıt yok");
@@ -211,18 +237,42 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
         </div>
         <form onSubmit={submit} style={styles.formGrid}>
           {FIELDS.map((f) => {
-            const opts = f.options === "LOCATIONS" ? locationOptions : Array.isArray(f.options) ? f.options : null;
+            const isLoc = f.options === "LOCATIONS";
+            const fixedOpts = Array.isArray(f.options) ? f.options : null;
+            const isTextarea = f.k === "reason" || f.k === "returns";
             return (
               <div key={f.k} style={f.wide ? styles.formFieldWide : styles.formField}>
                 <label style={styles.formLabel}>{f.label}</label>
-                {opts && opts.length > 0 ? (
+                {isLoc ? (
+                  <>
+                    <input
+                      list="ni-loc-list"
+                      value={form[f.k]}
+                      onChange={(e) => setF(f.k, e.target.value)}
+                      style={inp}
+                      placeholder={locationOptions.length ? "yazarak ara veya listeden seç" : "lokasyon"}
+                    />
+                    <datalist id="ni-loc-list">
+                      {locationOptions.map((o) => (
+                        <option key={o} value={o} />
+                      ))}
+                    </datalist>
+                  </>
+                ) : fixedOpts ? (
                   <select value={form[f.k]} onChange={(e) => setF(f.k, e.target.value)} style={{ ...inp }}>
                     <option value="">— seçiniz —</option>
-                    {opts.map((o) => (
+                    {fixedOpts.map((o) => (
                       <option key={o} value={o}>{o}</option>
                     ))}
-                    {form[f.k] && !opts.includes(form[f.k]) && <option value={form[f.k]}>{form[f.k]}</option>}
+                    {form[f.k] && !fixedOpts.includes(form[f.k]) && <option value={form[f.k]}>{form[f.k]}</option>}
                   </select>
+                ) : isTextarea ? (
+                  <textarea
+                    rows={2}
+                    value={form[f.k]}
+                    onChange={(e) => setF(f.k, e.target.value)}
+                    style={{ ...inp, resize: "vertical", fontFamily: "inherit" }}
+                  />
                 ) : (
                   <input
                     type={f.type || "text"}
@@ -241,6 +291,55 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
             </button>
           </div>
         </form>
+
+        {/* İADELER — kişinin TH zimmetindeki cihazları getir */}
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${pal.line}` }}>
+          <p style={{ ...styles.formLabel, marginBottom: 6 }}>İADELER — kişinin zimmetli cihazlarını getir (TuruncuHat)</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              type="text"
+              value={returnQuery}
+              onChange={(e) => setReturnQuery(e.target.value)}
+              style={{ ...inp, flex: "1 1 280px" }}
+              placeholder="Kişi adı yaz (SCCM'deki tam ad) — örn. Ahmet Yılmaz"
+            />
+          </div>
+          {returnQuery.trim().length >= 2 && (
+            <div style={{ marginTop: 8, border: `1px solid ${pal.line}`, borderRadius: 8, maxHeight: 220, overflowY: "auto" }}>
+              {returnMatches.length === 0 ? (
+                <p style={{ ...styles.pageSub, margin: 0, padding: "10px 12px" }}>
+                  {thRows.length === 0 ? "TuruncuHat verisi henüz yüklenmedi." : "Eşleşen kişi/cihaz bulunamadı."}
+                </p>
+              ) : (
+                returnMatches.map((r) => (
+                  <div
+                    key={r.rowKey || `${r.serial}-${r.ownerFull}`}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 12px", borderBottom: `1px solid ${pal.line}`, fontSize: 12.5 }}
+                  >
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <strong>{r.ownerFull || r.owner}</strong> · {r.serial || "—"} · {r.model || r.marka || r.deviceType || "—"}
+                      {r.location && r.location !== "—" ? ` · ${r.location}` : ""}
+                    </span>
+                    <button
+                      type="button"
+                      style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
+                      onClick={() => {
+                        const line = `SN: ${r.serial || "—"} · ${r.model || r.marka || r.deviceType || ""} · sahibi: ${r.ownerFull || r.owner}${r.location && r.location !== "—" ? ` · ${r.location}` : ""}`;
+                        setForm((p) => ({ ...p, returns: (p.returns ? p.returns.replace(/\s*$/, "") + "\n" : "") + line }));
+                        showToast("İADELER alanına eklendi");
+                      }}
+                    >
+                      + İADELER'e ekle
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          <p style={{ ...styles.formHelper, marginTop: 6 }}>
+            Kişi adı SCCM'deki gibi yazılır; TuruncuHat zimmet kayıtlarında eşleşen kişiye ait cihazlar listelenir. "+ İADELER'e ekle" ile aşağıdaki İADELER alanına satır olarak eklenir (elle düzenlenebilir).
+          </p>
+        </div>
       </div>
 
       {/* KAYITLAR + AKSİYONLAR */}
