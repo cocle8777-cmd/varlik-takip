@@ -44,8 +44,8 @@ export const REPORT_TYPES = REPORT_CATEGORIES.flatMap((c) => c.reports);
 
 // Rapor kayıtlarında hangi raporların gerçek veriye sahip olduğu / Model filtresi gösterip
 // göstermeyeceği (gereksinim #3, #15) — bu üçü dışındakiler henüz veri kaynağı yok (F bloğu).
-export const REPORTS_WITH_REAL_DATA = new Set(["inaktif", "disk", "zimmet", "kullanilmayan"]);
-export const REPORTS_WITHOUT_MODEL_FILTER = new Set(["disk"]);
+export const REPORTS_WITH_REAL_DATA = new Set(["inaktif", "disk", "zimmet", "kullanilmayan", "bsod"]);
+export const REPORTS_WITHOUT_MODEL_FILTER = new Set(["disk", "bsod"]);
 
 // Sol menü — Network (gereksinim #1). Kaynak şu an manuel yükleme; ileride SharePoint/API'ye
 // geçilebilir (bkz. services/dataSourceAdapter.js).

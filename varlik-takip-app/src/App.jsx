@@ -14,6 +14,8 @@ import { fetchDiskRowsFromFile, mapDiskRow } from "./services/diskFileService";
 import { fetchSccmRowsFromFile, mapSccmRow } from "./services/sccmFileService";
 import { mapThRows, fetchThRowsFromFile } from "./services/thFileService";
 import { mapMonitorRows, fetchMonitorRowsFromFile } from "./services/monitorFileService";
+import { mapBsodRows } from "./services/bsodFileService";
+import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
 import LocationTrendChart from "./components/LocationTrendChart";
 import ManagementKpiPanel from "./components/ManagementKpiPanel";
@@ -197,6 +199,10 @@ export default function App({ user, onLogout } = {}) {
   const [realMonitorAll, setRealMonitorAll] = useState([]);
   const [realMonitorMeta, setRealMonitorMeta] = useState(null);
   const [loadingRealMonitor, setLoadingRealMonitor] = useState(false);
+  // LAKESIDE "Weekly_BSOD" raporu — sadece elle dosya seçimi (bkz. bsodFileService.js)
+  const [realBsodAll, setRealBsodAll] = useState([]);
+  const [realBsodMeta, setRealBsodMeta] = useState(null);
+  const [bsodMailTo, setBsodMailTo] = useState("");
 
   // Madde 1 — "Son Veri Güncelleme" artık global footer'da. Tüm gerçek veri dosyalarının
   // modifiedAt'lerinin en yenisi.
@@ -423,6 +429,7 @@ export default function App({ user, onLogout } = {}) {
   // yoksa "Veri Yok" gösterilir, hata olmaz.
   const showLastLogon = isZimmet || activeReport === "inaktif" || activeReport === "kullanilmayan";
   const isUnused = activeReport === "kullanilmayan";
+  const isBsod = activeReport === "bsod";
 
   // İnaktif Cihazlar ve Disk Alanı'nda gerçek dosya yüklendiyse departmanlar Excel'deki
   // "Sahibi Firma" sütunundan türetiliyor — sabit Departman 1/2/3 değil (bkz. konuşma). Sol
@@ -461,14 +468,14 @@ export default function App({ user, onLogout } = {}) {
   // Disk Alanı'nda genel "Cihaz Sahibi/Seri No-Model/Lokasyon" sütunları yerine
   // Hostname / Volume Name / Size / Free Space gösterilir (bkz. konuşma)
   const isDiskReport = activeReport === "disk";
-  const ownerLabel = isDiskReport ? "Hostname" : isUnused ? "Zimmet Sahibi" : "Cihaz Sahibi";
-  const serialLabel = isDiskReport ? "Volume Name" : isUnused ? "Seri No / Durum" : "Seri No / Model";
+  const ownerLabel = isDiskReport ? "Hostname" : isUnused ? "Zimmet Sahibi" : isBsod ? "Cihaz" : "Cihaz Sahibi";
+  const serialLabel = isDiskReport ? "Volume Name" : isUnused ? "Seri No / Durum" : isBsod ? "BSOD Kodu" : "Seri No / Model";
   const modelLabel = isDiskReport ? "Free Space" : "Model";
-  const locationLabel = isDiskReport ? "Size" : "Lokasyon";
+  const locationLabel = isDiskReport ? "Size" : isBsod ? "Crash Tarihi" : "Lokasyon";
   // owner + serial birlikte: Disk Alanı'nda "serial" (Volume Name) tek başına eşsiz değil
   // (aynı "Windows" birimi yüzlerce cihazda tekrarlanıyor) — hostname eklenmeden aynı anahtar
   // birden fazla satıra düşüp bir tanesini seçince hepsini birden seçili gösteriyordu
-  const rowKeyOf = (r) => (isZimmet ? r.rowKey : `${currentDeptKey}|${activeReport}|${r.owner}|${r.serial}`);
+  const rowKeyOf = (r) => (isZimmet || isBsod ? r.rowKey : `${currentDeptKey}|${activeReport}|${r.owner}|${r.serial}`);
 
   // Gereksinim #5: kullanıcı listeden 1 ya da daha fazla kayıt SEÇMİŞSE mail SADECE onlara
   // gitmeli, seçim yoksa (mevcut davranış) filtrelenmiş listenin tamamına gidilir. Bu desen
@@ -587,6 +594,8 @@ export default function App({ user, onLogout } = {}) {
 
   const rawRows = isZimmet
     ? zimmetRows
+    : isBsod
+    ? realBsodAll
     : isUnused
     ? (activeCompany === "all" ? unusedDeviceRows : unusedDeviceRows.filter((r) => r.company === activeCompany))
     : usingRealInaktif
@@ -900,6 +909,24 @@ export default function App({ user, onLogout } = {}) {
         "Kullanım Durumu": r.statusTag || r.usageStatus || "",
         "Açıklama": r.model || "",
       }));
+    }
+    if (isBsod) {
+      return rows.map((r) => {
+        const kb = lookupBsod(r.bsodCode);
+        return {
+          "Cihaz": r.hostShort || r.hostname || "",
+          "Hostname (tam)": r.hostname || "",
+          "Crash Tarihi": r.crashDate || "",
+          "BSOD Kodu": r.bsodName || "",
+          "Hex": r.bsodHex || "",
+          "Adet": r.count || 1,
+          "Kategori": kb.category || "",
+          "Önem": kb.severity || "",
+          "Olası Neden": kb.cause || "",
+          "ThinkPad / Kurumsal İmaj Notu": kb.thinkpad || "",
+          "Çözüm Adımları": (kb.actions || []).map((a, i) => `${i + 1}. ${a}`).join("  |  "),
+        };
+      });
     }
     return rows.map((r) => ({
       "Cihaz Sahibi": r.owner,
@@ -1367,6 +1394,64 @@ IT Support`;
     }
   };
 
+  // LAKESIDE BSOD — tek konsolide mail: her stop code için neden + ThinkPad/kurumsal imaj
+  // çözüm adımları GÖMÜLÜ (bkz. bsodKnowledgeService). Alıcı: elle girilen adres(ler); boşsa
+  // lokasyon mail gruplarındaki tüm adresler (IT dağıtım listesi). Lokasyon bilgisi dosyada yok.
+  const handleBsodMail = async () => {
+    const targetRows = resolveTargetRows();
+    if (targetRows.length === 0) {
+      showToast("Gönderilecek BSOD kaydı yok");
+      return;
+    }
+    let recipients = bsodMailTo
+      .split(/[;,\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => /@/.test(s));
+    if (recipients.length === 0) {
+      recipients = [...new Set(Object.values(parseMailGroupsText(mailGroupsText)))];
+    }
+    if (recipients.length === 0) {
+      showToast("Alıcı yok — üstteki kutuya bir e-posta adresi girin veya Ayarlar > Lokasyon Mailleri'ni doldurun");
+      return;
+    }
+    const to = recipients.join(", ");
+    const subject = bsodMailSubject(targetRows);
+    const html = buildBsodMailHtml(targetRows, {});
+    let ok = false;
+    let message = "";
+    try {
+      const result = await backendClient.sendMail({
+        to,
+        subject,
+        text: `BSOD raporu: ${targetRows.length} olay, ${new Set(targetRows.map((r) => r.hostShort)).size} cihaz. Ayrıntı ve çözüm adımları HTML gövdededir.`,
+        html,
+      });
+      ok = !!result.ok;
+      message = result.message || (ok ? "Gönderildi" : "Gönderilemedi");
+    } catch (err) {
+      message = err.message || "Gönderilemedi";
+    }
+    if (ok) {
+      // Her etkilenen cihaza aksiyon geçmişi kaydı
+      [...new Set(targetRows.map((r) => r.hostShort))].forEach((h) =>
+        logDeviceAction(
+          { hostname: h, serial: "" },
+          { type: "Mail", description: `BSOD çözüm adımları maili gönderildi`, mailSubject: subject, user: user?.username || "", reportId: "bsod", status: "Başarılı" }
+        )
+      );
+    }
+    recordMailHistory({
+      id: Date.now(),
+      date: new Date().toLocaleString("tr-TR"),
+      dept: "LakeSide",
+      report: "BSOD",
+      recipients: ok ? new Set(targetRows.map((r) => r.hostShort)).size : 0,
+      status: ok ? "Başarılı" : "Gönderilemedi",
+      details: [{ location: `${new Set(targetRows.map((r) => r.hostShort)).size} cihaz / ${targetRows.length} olay`, to, count: targetRows.length, ok, message }],
+    });
+    showToast(ok ? `✅ BSOD çözüm maili gönderildi (${to})` : `❌ Gönderilemedi — ${message}`);
+  };
+
   const handleMail = async () => {
     const deptName = currentDeptLabel;
     const reportName = REPORT_TYPES.find((r) => r.id === activeReport).name;
@@ -1376,6 +1461,9 @@ IT Support`;
     }
     if (isUnused) {
       return handleUnusedMail();
+    }
+    if (isBsod) {
+      return handleBsodMail();
     }
 
     const targetRows = resolveTargetRows();
@@ -1816,6 +1904,28 @@ IT Support`;
         setRealMonitorAll(rows);
         setRealMonitorMeta({ fileName: file.name, modifiedAt: new Date(file.lastModified).toISOString() });
         showToast(`${file.name} içinden ${rows.length} kayıt yüklendi${rows.length === 0 ? " (dosya boş)" : ""}`);
+      } catch (err) {
+        showToast(`Dosya okunamadı: ${err.message}`);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleManualBsodFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "array", dense: true });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        // "Weekly_BSOD" dosyasında 1. satır boş, başlık 2. satırda → range: 1
+        const raw = XLSX.utils.sheet_to_json(sheet, { defval: "", range: 1 });
+        const rows = mapBsodRows(raw);
+        setRealBsodAll(rows);
+        setRealBsodMeta({ fileName: file.name, modifiedAt: new Date(file.lastModified).toISOString() });
+        showToast(`${file.name} içinden ${rows.length} BSOD kaydı yüklendi${rows.length === 0 ? " (dosya boş)" : ""}`);
       } catch (err) {
         showToast(`Dosya okunamadı: ${err.message}`);
       }
@@ -3026,6 +3136,26 @@ IT Support`;
                     </p>
                   )}
                 </div>
+
+                <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
+                  <p style={styles.formLabel}>LAKESIDE — Weekly BSOD Raporu</p>
+                  <p style={styles.formHelper}>
+                    LakeSide'ın haftalık BSOD (mavi ekran) Excel'i (Crash Date · Machine Name · Application Name · BSOD Count).
+                    Her stop code için olası neden + Lenovo ThinkPad / kurumsal Windows imajı çözüm adımları uygulamaya gömülüdür;
+                    "BSOD" raporunda listelenir ve "Mail Gönder" ile çözüm taslağı olarak iletilir.
+                  </p>
+                  <label style={{ ...styles.btnGhost, cursor: "pointer", display: "inline-flex", marginTop: 8 }}>
+                    Weekly_BSOD_*.xlsx Seç…
+                    <input type="file" accept=".xlsx" onChange={handleManualBsodFile} style={{ display: "none" }} />
+                  </label>
+                  {realBsodMeta && (
+                    <p style={{ ...styles.formHelper, marginTop: 10 }}>
+                      BSOD: <strong>{realBsodMeta.fileName}</strong> ({realBsodAll.length} olay ·{" "}
+                      {new Set(realBsodAll.map((r) => r.hostShort)).size} cihaz ·{" "}
+                      {bsodCoverage(realBsodAll.map((r) => r.bsodCode)).filter((c) => !c.resolved).length} tanımsız kod)
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div style={{ ...styles.panel, padding: "20px 24px" }}>
@@ -3254,10 +3384,29 @@ IT Support`;
                     ? realThMeta
                       ? `TuruncuHat (OBS zimmetli) × SCCM karşılaştırması — SCCM'de hiç kaydı olmayan veya son girişi ${staleDays} günden eski cihazlar "kullanılmıyor" sayılır. Eşik Ayarlar'dan değiştirilebilir.`
                       : "Henüz TuruncuHat envanteri yüklenmedi — aşağıdan yükleyin"
+                    : isBsod
+                    ? realBsodMeta
+                      ? `LakeSide BSOD — ${realBsodMeta.fileName} · ${realBsodAll.length} olay. Her stop code için olası neden + ThinkPad / kurumsal imaj çözüm adımları mail taslağına gömülüdür.`
+                      : "Henüz Weekly_BSOD Excel'i yüklenmedi — aşağıdan seçin"
                     : usingRealFileData && (usingRealInaktif ? realInaktifMeta : realDiskMeta)
                     ? `Gerçek veri — ${(usingRealInaktif ? realInaktifMeta : realDiskMeta).fileName} (${new Date((usingRealInaktif ? realInaktifMeta : realDiskMeta).modifiedAt).toLocaleString("tr-TR")})`
                     : "Sahte veri ile demo · gerçek API bağlandığında burası canlı veriyle güncellenecek"}
                 </p>
+                {isBsod && (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                    <label style={{ ...styles.chipToggle, display: "inline-flex", cursor: "pointer" }}>
+                      📄 Weekly_BSOD Excel Seç…
+                      <input type="file" accept=".xlsx" onChange={handleManualBsodFile} style={{ display: "none" }} />
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Mail alıcı(lar) — boşsa lokasyon mail listesi"
+                      value={bsodMailTo}
+                      onChange={(e) => setBsodMailTo(e.target.value)}
+                      style={{ ...styles.searchInput, border: `1px solid ${pal.line}`, borderRadius: 8, padding: "8px 11px", minWidth: 260, background: pal.fieldBg }}
+                    />
+                  </div>
+                )}
                 {activeReport === "inaktif" && (
                   <div style={{ ...styles.chipToggle, display: "inline-block", marginBottom: 10 }} onClick={loadingRealInaktif ? undefined : loadRealInaktifData}>
                     {loadingRealInaktif ? "Yükleniyor..." : "📄 SharePoint Excel'inden Gerçek Veriyi Yükle"}
@@ -3288,7 +3437,7 @@ IT Support`;
                     <span style={styles.statNum}>{rawRows.length}</span>
                     <span style={styles.statLabel}>toplam kayıt</span>
                   </div>
-                  {!isUnused && (
+                  {!isUnused && !isBsod && (
                   <div
                     style={{ ...styles.stat, ...styles.statClickable, ...(segment === "matched" ? styles.statActive : {}) }}
                     onClick={() => setSegment("matched")}
@@ -3298,7 +3447,7 @@ IT Support`;
                     <span style={styles.statLabel}>{isZimmet ? "zimmet doğru" : "eşleşen"}</span>
                   </div>
                   )}
-                  {!isUnused && (
+                  {!isUnused && !isBsod && (
                   <div
                     style={{ ...styles.stat, ...styles.statClickable, ...(segment === "unmatched" ? styles.statActive : {}) }}
                     onClick={() => setSegment("unmatched")}
@@ -3306,6 +3455,18 @@ IT Support`;
                   >
                     <span style={{ ...styles.statNum, color: pal.bad }}>{unmatchedCount}</span>
                     <span style={styles.statLabel}>{isZimmet ? "zimmet hatalı" : "eşleşmeyen"}</span>
+                  </div>
+                  )}
+                  {isBsod && (
+                  <div style={styles.stat}>
+                    <span style={{ ...styles.statNum, color: pal.accent }}>{new Set(rawRows.map((r) => r.hostShort)).size}</span>
+                    <span style={styles.statLabel}>etkilenen cihaz</span>
+                  </div>
+                  )}
+                  {isBsod && (
+                  <div style={styles.stat}>
+                    <span style={{ ...styles.statNum, color: pal.bad }}>{new Set(rawRows.map((r) => r.bsodName)).size}</span>
+                    <span style={styles.statLabel}>farklı hata tipi</span>
                   </div>
                   )}
                   {isUnused && (
@@ -3419,7 +3580,7 @@ IT Support`;
                       { id: "all", label: "Tümü" },
                       // Kullanılmayan Cihazlar'da her satır zaten "kullanılmıyor" (matched:false) —
                       // Eşleşen/Eşleşmeyen ayrımı anlamsız, gösterilmez.
-                      ...(isUnused ? [] : [
+                      ...(isUnused || isBsod ? [] : [
                         { id: "matched", label: isZimmet ? "Zimmet Doğru" : "Eşleşen" },
                         { id: "unmatched", label: isZimmet ? "Zimmet Hatalı" : "Eşleşmeyen" },
                       ]),
@@ -3630,6 +3791,10 @@ IT Support`;
                       ? realThMeta
                         ? `Gerçek veri: ${realThMeta.fileName}${realSccmMeta ? ` + ${realSccmMeta.fileName}` : ""}`
                         : "Sahte veri (demo)"
+                      : isBsod
+                      ? realBsodMeta
+                        ? `Gerçek veri: ${realBsodMeta.fileName}`
+                        : "Dosya seçilmedi"
                       : usingRealFileData && (usingRealInaktif ? realInaktifMeta : realDiskMeta)
                       ? `Gerçek veri: ${(usingRealInaktif ? realInaktifMeta : realDiskMeta).fileName}`
                       : "Sahte veri (demo)"}

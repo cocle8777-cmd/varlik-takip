@@ -26,25 +26,39 @@ function canonicalName(raw) {
 const HEX_TO_NAME = {
   "0X0000000A": "IRQL_NOT_LESS_OR_EQUAL",
   "0XA": "IRQL_NOT_LESS_OR_EQUAL",
+  "0X00000018": "REFERENCE_BY_POINTER",
+  "0X0000001A": "MEMORY_MANAGEMENT",
   "0X0000001E": "KMODE_EXCEPTION_NOT_HANDLED",
   "0X00000020": "HYPERVISOR_ERROR", // 0x20001 kısaltması olarak da görülür
   "0X00020001": "HYPERVISOR_ERROR",
   "0X0000003B": "SYSTEM_SERVICE_EXCEPTION",
+  "0X0000004D": "NO_PAGES_AVAILABLE",
+  "0X0000004E": "PFN_LIST_CORRUPT",
+  "0X00000050": "PAGE_FAULT_IN_NONPAGED_AREA",
   "0X0000007E": "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED",
+  "0X0000007F": "UNEXPECTED_KERNEL_MODE_TRAP",
   "0X0000009F": "DRIVER_POWER_STATE_FAILURE",
   "0X000000A0": "INTERNAL_POWER_ERROR",
+  "0X000000C2": "BAD_POOL_CALLER",
+  "0X000000C5": "DRIVER_CORRUPTED_EXPOOL",
   "0X000000D1": "DRIVER_IRQL_NOT_LESS_OR_EQUAL",
   "0X000000EF": "CRITICAL_PROCESS_DIED",
   "0X000000F4": "CRITICAL_OBJECT_TERMINATION",
+  "0XC000021A": "FATAL_UNHANDLED_HARD_ERROR",
+  "0X00000101": "CLOCK_WATCHDOG_TIMEOUT",
   "0X00000109": "CRITICAL_STRUCTURE_CORRUPTION",
   "0X0000010E": "VIDEO_MEMORY_MANAGEMENT_INTERNAL",
+  "0X00000113": "VIDEO_DXGKRNL_FATAL_ERROR",
   "0X00000116": "VIDEO_TDR_FAILURE",
+  "0X00000119": "VIDEO_SCHEDULER_INTERNAL_ERROR",
   "0X00000124": "WHEA_UNCORRECTABLE_ERROR",
   "0X0000012B": "FAULTY_HARDWARE_CORRUPTED_PAGE",
   "0X00000133": "DPC_WATCHDOG_VIOLATION",
+  "0X00000135": "REGISTRY_FILTER_DRIVER_EXCEPTION",
   "0X00000139": "KERNEL_SECURITY_CHECK_FAILURE",
   "0X0000013A": "KERNEL_MODE_HEAP_CORRUPTION",
   "0X0000014F": "PDC_WATCHDOG_TIMEOUT",
+  "0X00000154": "UNEXPECTED_STORE_EXCEPTION",
   "0X0000019C": "WIN32K_POWER_WATCHDOG_TIMEOUT",
 };
 
@@ -56,6 +70,9 @@ const DUMP = "C:\\Windows\\Minidump altındaki .dmp dosyasını BlueScreenView/W
 const MEM = "Windows Bellek Tanılama veya MemTest86 ile RAM testi yapın (birden fazla tur).";
 const DOCK = "ThinkPad dock kullanılıyorsa: dock firmware'ini güncelleyin, docku çıkarıp deneyin, USB-C/Thunderbolt sürücüsünü güncelleyin.";
 const VERIFIER = "Tekrarlıyorsa Driver Verifier (`verifier /standard /all` — tek gecelik) ile kusurlu 3. parti sürücüyü ortaya çıkarın, sonra `verifier /reset`.";
+const DISKCHK = "Yönetici CMD: `chkdsk C: /scan`; Commercial Vantage ile SSD/NVMe SMART/sağlık durumunu kontrol edin.";
+const FASTBOOT = "Denetim Masası > Güç Seçenekleri > 'Hızlı başlatmayı aç' seçeneğini KAPATIN (kurumsal imajda bu, depolama/sürücü kaynaklı mavi ekranları sık tetikler).";
+const AVREINSTALL = "Kurumsal uç nokta güvenlik ajanını (Defender for Endpoint / CrowdStrike / SentinelOne) en güncel sürüme yükseltin; sensör bozulduysa güvenlik ekibiyle temiz kurulum yapın.";
 
 // Ana bilgi tabanı — anahtar: sembolik ad (canonicalName çıktısı).
 export const BSOD_KB = {
@@ -311,14 +328,174 @@ export const BSOD_KB = {
     thinkpad: "Ekran sürücüsü + yonga seti + BIOS güncelleyin. Harici monitör/dock varsa onu çıkarıp test edin. Katlanabilir modelde panel şerit kablosu fiziksel olarak kontrol edilmeli.",
     actions: ["Ekran kartı ve yonga seti sürücülerini güncelleyin.", DOCK, FW, DUMP],
   },
+
+  VIDEO_DXGKRNL_FATAL_ERROR: {
+    code: "0x00000113",
+    title: "DirectX grafik çekirdeği (dxgkrnl) kritik hata verdi",
+    category: "GPU sürücüsü",
+    severity: "orta",
+    cause: "DirectX grafik alt sistemi ölümcül bir iç hata ile durdu. Sebep VIDEO_TDR_FAILURE ile aynıdır: eski/hatalı Intel veya NVIDIA ekran sürücüsü, bazen bilinen hatalı bir sürücü derlemesi.",
+    thinkpad: "Lenovo'nun o model için önerdiği ekran sürücüsü sürümüne sabitleyin; DDU ile temiz kurun.",
+    actions: [
+      "Aygıt Yöneticisi > Görüntü bağdaştırıcıları > sürücüyü güncelleyin ya da bir önceki sürüme geri alın.",
+      "DDU (Display Driver Uninstaller) ile temiz kaldırıp yeniden kurun.",
+      "'Donanım hızlandırmalı GPU zamanlaması'nı kapatın.",
+      FW,
+    ],
+  },
+  VIDEO_SCHEDULER_INTERNAL_ERROR: {
+    code: "0x00000119",
+    title: "Ekran kartı zamanlayıcısı beklenmeyen bir hatayla karşılaştı",
+    category: "GPU sürücüsü",
+    severity: "orta",
+    cause: "GPU zamanlayıcısı (video scheduler) tutarsız duruma düştü. Neredeyse her zaman eski/hatalı ekran sürücüsü; nadiren GPU donanımı.",
+    thinkpad: "Ekran sürücüsünü güncelleyin/geri alın; DDU ile temiz kurun. Hata firmware+sürücü güncel iken sürüyorsa GPU donanımı için Lenovo Diagnostics çalıştırın.",
+    actions: [
+      "Ekran sürücüsünü güncelleyin; güncelleme sonrası başladıysa geri alın.",
+      "DDU ile temiz kaldırıp yeniden kurun.",
+      FW,
+      "Sürerse: Lenovo Diagnostics (UEFI) ile GPU/ekran testi.",
+    ],
+  },
+  PAGE_FAULT_IN_NONPAGED_AREA: {
+    code: "0x00000050",
+    title: "Var olmayan bir bellek adresine erişildi (sayfalanamaz alan)",
+    category: "RAM / 3. parti sürücü",
+    severity: "orta",
+    cause: "Bir bileşen, geçerli olmayan sistem belleğine başvurdu. En sık: arızalı/yanlış oturmuş RAM; ardından hatalı bir aygıt sürücüsü; nadiren bozuk NTFS/sayfa dosyası.",
+    thinkpad: "Önce RAM testi. Dökümde bir .sys adı varsa o sürücüyü güncelleyin (ThinkPad'de sık: Intel Wi-Fi, depolama, güvenlik/VPN filtre sürücüsü).",
+    actions: [MEM, DUMP, DRV, SFC, VERIFIER],
+  },
+  PFN_LIST_CORRUPT: {
+    code: "0x0000004E",
+    title: "Bellek yöneticisinin sayfa çerçevesi listesi (PFN) bozuldu",
+    category: "RAM / sürücü",
+    severity: "yüksek",
+    cause: "Fiziksel bellek yönetim yapıları bozuldu. Baskın sebep arızalı RAM; ikinci olarak sınır dışına yazan bir sürücü.",
+    thinkpad: "MemTest86 ile uzun test yapın. RAM soketliyse yeniden oturtun/teker teker test edin; lehimli RAM'de anakart RMA.",
+    actions: [MEM, "RAM soketliyse modülleri yeniden oturtun / teker teker test edin.", VERIFIER, DUMP, FW],
+  },
+  NO_PAGES_AVAILABLE: {
+    code: "0x0000004D",
+    title: "Sistem kullanılabilir bellek sayfası bulamadı",
+    category: "Sürücü bellek sızıntısı / kaynak",
+    severity: "orta",
+    cause: "Windows'un boş fiziksel bellek sayfası kalmadı — genellikle bir sürücünün ya da hizmetin çekirdek bellek sızıntısı; bazen çok küçük/devre dışı sayfa dosyası.",
+    thinkpad: "Sayfa dosyasının 'sistem tarafından yönetilsin' olduğundan emin olun. Poolmon/RAMMap ile sızdıran havuz etiketini bulup ilgili sürücüyü güncelleyin.",
+    actions: [
+      "Sistem Özellikleri > Gelişmiş > Performans > Sanal bellek: 'Otomatik olarak yönet' açık olsun.",
+      DUMP,
+      "RAMMap/poolmon ile sızıntı yapan sürücüyü tespit edip güncelleyin/kaldırın.",
+      DRV,
+      VERIFIER,
+    ],
+  },
+  MEMORY_MANAGEMENT: {
+    code: "0x0000001A",
+    title: "Ağır bir bellek yönetimi hatası",
+    category: "RAM / sürücü / disk",
+    severity: "yüksek",
+    cause: "Bellek yöneticisi ciddi bir tutarsızlık gördü. En sık arızalı RAM; ardından hatalı sürücü, bozuk sistem dosyaları veya zayıflayan disk.",
+    thinkpad: "MemTest86 (birden çok tur) + `chkdsk` + `sfc/DISM`. RAM soketliyse yeniden oturtun.",
+    actions: [MEM, SFC, DISKCHK, DRV, FW],
+  },
+  UNEXPECTED_STORE_EXCEPTION: {
+    code: "0x00000154",
+    title: "Çekirdek bellek deposu bileşeni beklenmeyen bir özel durum yakaladı",
+    category: "Depolama / RAM / sistem dosyası",
+    severity: "yüksek",
+    cause: "Sıkıştırılmış bellek/depolama bileşeni beklenmeyen istisna aldı. Tipik sebepler: eski depolama sürücüsü (storahci.sys / in-page I/O hatası), zayıflayan SSD, bozuk sistem dosyaları, arızalı RAM.",
+    thinkpad: "SSD/NVMe firmware + Intel RST/NVMe sürücüsünü güncelleyin, SSD sağlığını kontrol edin. 'Hızlı başlatma'yı kapatın.",
+    actions: [
+      "SSD/NVMe firmware ve depolama sürücüsünü güncelleyin, SMART/sağlık kontrolü yapın.",
+      FASTBOOT,
+      DISKCHK,
+      SFC,
+      MEM,
+    ],
+  },
+  REFERENCE_BY_POINTER: {
+    code: "0x00000018",
+    title: "Bir çekirdek nesnesinin referans sayacı hatalı yönetildi",
+    category: "3. parti sürücü",
+    severity: "orta",
+    cause: "Bir sürücü, bir nesnenin referans sayacını yanlış artırdı/azalttı (nesne hâlâ kullanılırken serbest bırakıldı). Neredeyse her zaman hatalı bir 3. parti sürücü — sık kaynaklar: antivirüs/EDR, VPN, dosya sistemi filtre sürücüleri.",
+    thinkpad: "Kurumsal güvenlik/VPN ajanını güncelleyin. Driver Verifier ile kusurlu sürücüyü ortaya çıkarın.",
+    actions: [DUMP, AVREINSTALL, VERIFIER, DRV, SFC],
+  },
+  BAD_POOL_CALLER: {
+    code: "0x000000C2",
+    title: "Bir iş parçacığı, geçersiz bir çekirdek bellek (pool) isteği yaptı",
+    category: "3. parti sürücü",
+    severity: "orta",
+    cause: "Bir sürücü, zaten serbest bırakılmış belleği ikinci kez serbest bıraktı ya da hatalı boyut/etiketle havuz isteği yaptı. Klasik 3. parti sürücü hatası (eski ağ, depolama, güvenlik veya sanal aygıt sürücüleri).",
+    thinkpad: "Dökümdeki havuz etiketi kusurlu sürücüyü işaret eder. ThinkPad'de sık: Intel Wi-Fi, güvenlik ajanı filtre sürücüsü, eski RST.",
+    actions: [DUMP, VERIFIER, "Tespit edilen sürücüyü güncelleyin ya da gerekmiyorsa kaldırın.", DRV, MEM],
+  },
+  REGISTRY_FILTER_DRIVER_EXCEPTION: {
+    code: "0x00000135",
+    title: "Bir kayıt defteri filtre sürücüsü işlenmeyen bir özel durum üretti",
+    category: "Güvenlik / filtre sürücüsü",
+    severity: "orta",
+    cause: "Kayıt defteri (registry) çağrılarını izleyen bir filtre sürücüsü, bildirim rutininde istisnayı yakalamadı. Bu sürücüler neredeyse her zaman antivirüs / EDR ürünleridir (ör. Defender WdFilter.sys), bazen yedekleme/izleme ajanları.",
+    thinkpad: "Kurumsal uç nokta güvenlik ajanını güncelleyin/temiz kurun. Yakın zamanda kurulan izleme/yedekleme yazılımını gözden geçirin.",
+    actions: [DUMP, AVREINSTALL, "Son yüklenen izleme/yedekleme/kayıt defteri araçlarını kaldırıp test edin.", SFC, DRV],
+  },
+  UNEXPECTED_KERNEL_MODE_TRAP: {
+    code: "0x0000007F",
+    title: "İşlemci beklenmeyen bir tuzak (trap) üretti — ör. çift hata (double fault)",
+    category: "Donanım / firmware / sürücü",
+    severity: "yüksek",
+    cause: "CPU, çekirdeğin izin vermediği bir tuzak üretti (çoğunlukla double fault / bölme hatası). Sık sebepler: arızalı RAM, kararsız güç/ısıl durum, eski BIOS/mikrokod; daha az sıklıkla hatalı sürücü.",
+    thinkpad: "BIOS/UEFI + Intel ME firmware güncelleyin (CPU mikrokodu BIOS ile gelir). Isıl durumu ve şarj adaptörünü kontrol edin, RAM testi yapın.",
+    actions: [FW, MEM, "Havalandırma/fan temizliği, orijinal şarj cihazıyla dock'suz test.", DUMP, DRV],
+  },
+  CLOCK_WATCHDOG_TIMEOUT: {
+    code: "0x00000101",
+    title: "Bir işlemci çekirdeği saat kesmesini zamanında işlemedi",
+    category: "İşlemci / firmware",
+    severity: "yüksek",
+    cause: "İkincil bir CPU çekirdeği, beklenen sürede saat kesmesine yanıt vermedi (çekirdekler arası kilitlenme). Genellikle BIOS/mikrokod hatası, sanallaştırma/güç ayarları veya aşırı ısınma; nadiren CPU donanımı.",
+    thinkpad: "BIOS/UEFI + Intel ME firmware güncelleyin. BIOS'ta güç/performans profilini ve C-state ayarlarını imaj standardına döndürün. Isıl temizlik yapın.",
+    actions: [
+      FW,
+      "BIOS'ta CPU güç yönetimi / C-state / Turbo ayarlarını varsayılana alın; VT ayarlarının tutarlı olduğundan emin olun.",
+      "Havalandırma/fan temizliği; orijinal şarj cihazıyla test.",
+      "Firmware güncel ve ısıl sorun yokken sürerse: Lenovo Diagnostics ile CPU testi, gerekirse servis.",
+    ],
+  },
+  FATAL_UNHANDLED_HARD_ERROR: {
+    code: "0xC000021A",
+    title: "Kritik bir Windows süreci sonlandığı için sistem durduruldu (hard error)",
+    category: "Sistem dosyası / güncelleme / disk",
+    severity: "kritik",
+    cause: "Kullanıcı modunda çalışan zorunlu bir sistem süreci (csrss.exe, winlogon.exe, lsass.exe) çöktü — Windows güvenli biçimde devam edemez. Sebep: bozuk sistem dosyaları, yarım/hatalı bir güncelleme, uyumsuz güvenlik ajanı ya da zayıflayan disk.",
+    thinkpad: "İmajlanmış cihazlarda genellikle bozuk bileşen deposu veya sorunlu bir kalite güncellemesidir. Disk SMART değerlerini mutlaka kontrol edin; sık tekrarlıyorsa standart imajla yeniden kurun.",
+    actions: [
+      "WinRE > Komut İstemi: `DISM /Image:C:\\ /Cleanup-Image /RestoreHealth` ve `sfc /scannow /offbootdir=C:\\ /offwindir=C:\\Windows`.",
+      "Son yüklenen Windows güncellemesini WinRE'den kaldırın: `wusa /uninstall /kb:XXXXXXX` veya 'Güncelleştirmeleri kaldır'.",
+      DISKCHK,
+      AVREINSTALL,
+      "Onarılamıyorsa cihazı standart kurumsal imaj ile yeniden kurun.",
+    ],
+  },
+  DRIVER_CORRUPTED_EXPOOL: {
+    code: "0x000000C5",
+    title: "Bir sürücü, yüksek IRQL'de bozulmuş havuz belleğine erişti",
+    category: "3. parti sürücü / RAM",
+    severity: "orta",
+    cause: "Bir sürücü çekirdek havuz belleğini bozdu ve ardından buna erişildi. BAD_POOL_CALLER ile aynı aileden; hatalı 3. parti sürücü veya RAM.",
+    thinkpad: "Driver Verifier ile kusurlu sürücüyü bulun; RAM testi yapın.",
+    actions: [VERIFIER, DUMP, MEM, DRV],
+  },
 };
 
 // Kısa sembolik ad eşanlamlıları / kısaltmaları
 const SYNONYMS = {
-  SYSTEM_THREAD_EXCEPTION_NOT_HANDLED_M: "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED",
-  KERNEL_SECURITY_CHECK_FAILURE_M: "KERNEL_SECURITY_CHECK_FAILURE",
-  BAD_POOL_CALLER: "KERNEL_MODE_HEAP_CORRUPTION", // yığın bozulmasıyla birlikte sık görülür
-  BAD_POOL_HEADER: "KERNEL_MODE_HEAP_CORRUPTION",
+  BAD_POOL_HEADER: "BAD_POOL_CALLER", // aynı havuz-bellek ailesi
+  DRIVER_VERIFIER_DETECTED_VIOLATION: "KERNEL_MODE_HEAP_CORRUPTION",
+  KERNEL_DATA_INPAGE_ERROR: "UNEXPECTED_STORE_EXCEPTION", // in-page I/O — depolama
+  DRIVER_OVERRAN_STACK_BUFFER: "KERNEL_SECURITY_CHECK_FAILURE",
 };
 
 // Bilinmeyen kod için genel şablon — uygulama hata vermez (madde 14 mantığı).
@@ -380,6 +557,11 @@ function rowLabel(r) {
 function rowHost(r) {
   return r.hostname || r.host || r.computer || r.computerName || r.cihaz || "";
 }
+// Kullanıcı isteği: mail içeriğinde hostname'in ilk noktadan sonrası (FQDN alan adı) atılır.
+// "PC12345.sirket.local" -> "PC12345"
+export function shortHost(h) {
+  return String(h || "").trim().split(".")[0];
+}
 function rowUser(r) {
   return r.user || r.username || r.kullanici || r.owner || "";
 }
@@ -400,13 +582,13 @@ export function buildBsodMailHtml(rows = [], { locationLabel = "" } = {}) {
   });
   const ordered = [...groups.values()].sort((a, b) => b.hits.length - a.hits.length);
   const totalHits = ordered.reduce((s, g) => s + g.hits.length, 0);
-  const hostCount = new Set(rows.map(rowHost).filter(Boolean)).size;
+  const hostCount = new Set(rows.map((r) => shortHost(rowHost(r))).filter(Boolean)).size;
 
   const blocks = ordered
     .map((g) => {
       const e = g.entry;
       const sev = SEV_COLOR[e.severity] || SEV_COLOR.orta;
-      const hostList = [...new Set(g.hits.map((h) => h.host).filter(Boolean))];
+      const hostList = [...new Set(g.hits.map((h) => shortHost(h.host)).filter(Boolean))];
       const steps = e.actions.map((a) => `<li style="margin:3px 0;">${esc(a)}</li>`).join("");
       return `
       <div style="border:1px solid #ddd;border-left:4px solid ${sev};border-radius:6px;padding:12px 14px;margin:12px 0;">
@@ -434,6 +616,6 @@ export function buildBsodMailHtml(rows = [], { locationLabel = "" } = {}) {
 }
 
 export function bsodMailSubject(rows = []) {
-  const n = new Set(rows.map(rowHost).filter(Boolean)).size;
+  const n = new Set(rows.map((r) => shortHost(rowHost(r))).filter(Boolean)).size;
   return n ? `LakeSide BSOD — ${n} cihaz için neden ve çözüm adımları` : "LakeSide BSOD — neden ve çözüm adımları";
 }
