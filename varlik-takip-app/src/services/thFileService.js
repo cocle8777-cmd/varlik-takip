@@ -46,6 +46,8 @@ export function mapThRow(raw) {
     barkod: col(raw, "Varlık Barkodu"),
     marka: col(raw, "Marka"),
     model: col(raw, "Asset", "Model"),
+    // Ham "Asset" sütunu = "Varlık Kataloğu" (bkz. konuşma — Yeni Kurulum mailinde bu sütun).
+    asset: col(raw, "Asset"),
     // Ham "Model" sütunu ("NOTEBOOK"/"MONITOR" gibi kategori) — comparisonService.js bunun
     // üzerinden bir TH satırının monitor mu PC mi olduğuna karar veriyor. "model" alanı (yukarıda)
     // görüntüleme için Asset'i öncelikli aldığından ("Lenovo ThinkVision T24i-30" gibi) bu

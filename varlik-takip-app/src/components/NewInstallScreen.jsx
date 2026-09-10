@@ -43,9 +43,9 @@ function buildMailHtml(recs, thRows = []) {
       const cells = [
         r.serial || "",
         (th && th.barkod) || "",
-        r.model || (th && th.model) || "",
+        r.model || "",
         (th && th.marka) || "",
-        r.assetCatalog || "",
+        (th && (th.asset || th.model)) || "", // Varlık Kataloğu = TH "Asset" sütunu
         r.atoNo || "",
       ];
       return `<tr>${cells.map((c) => `<td style="border:1px solid #000;padding:6px 10px;">${esc(c)}</td>`).join("")}</tr>`;
