@@ -25,6 +25,7 @@ import { deviceKeyOf, logDeviceAction, persistDeviceMeta } from "./services/devi
 import { computeUnusedDevices, DEFAULT_STALE_DAYS } from "./services/unusedDeviceService";
 import { buildUnusedDeviceMailHtml, unusedDeviceMailSubject } from "./services/unusedDeviceMailService";
 import DeviceOverviewCard from "./components/DeviceOverviewCard";
+import NewInstallScreen from "./components/NewInstallScreen";
 import AppFooter from "./components/AppFooter";
 import { LIGHT_PALETTE, DARK_PALETTE } from "./theme/palette";
 import { buildStyles } from "./theme/buildStyles";
@@ -3523,6 +3524,15 @@ IT Support`;
                 </div>
               </div>
             </>
+          ) : activeReport === "yeni-kurulum" ? (
+            <NewInstallScreen
+              styles={styles}
+              pal={pal}
+              user={user}
+              mailGroupsText={mailGroupsText}
+              recordMailHistory={recordMailHistory}
+              showToast={showToast}
+            />
           ) : activeNetworkView ? (
             <>
               <div style={{ ...styles.panel, padding: "20px 24px" }}>

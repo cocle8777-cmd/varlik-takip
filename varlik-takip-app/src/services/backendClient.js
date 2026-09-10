@@ -131,6 +131,14 @@ export const backendClient = {
   getSnapshots: (reportId) => request(`/snapshots${reportId ? `?reportId=${encodeURIComponent(reportId)}` : ""}`),
   postSnapshot: (payload) => request("/snapshots", { method: "POST", body: JSON.stringify(payload) }),
 
+  // Yeni Kurulum Kaydı — form → sistem → Excel → mail
+  getNewInstalls: () => request("/newinstalls"),
+  addNewInstall: (rec) => request("/newinstalls", { method: "POST", body: JSON.stringify(rec) }),
+  updateNewInstall: (id, rec) => request(`/newinstalls/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(rec) }),
+  deleteNewInstall: (id) => request(`/newinstalls/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  setNewInstallExcelPath: (excelPath) => request("/newinstalls/config/excel-path", { method: "PUT", body: JSON.stringify({ excelPath }) }),
+  syncNewInstallExcel: (excelPath) => request("/newinstalls/sync-excel", { method: "POST", body: JSON.stringify({ excelPath }) }),
+
   getInaktifCihazlarReport: () => request("/reports/inaktif-cihazlar"),
   getDiskAlaniReport: () => request("/reports/disk-alani"),
   getSccmReport: () => request("/reports/sccm"),

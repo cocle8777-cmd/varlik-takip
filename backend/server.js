@@ -11,6 +11,7 @@ const reportsRouter = require("./src/routes/reports");
 const deviceActionsRouter = require("./src/routes/deviceactions");
 const snapshotsRouter = require("./src/routes/snapshots");
 const appConfigRouter = require("./src/routes/appconfig");
+const newInstallsRouter = require("./src/routes/newinstalls");
 const authRouter = require("./src/routes/auth");
 const authSettingsRouter = require("./src/routes/authsettings");
 const { verifyCredentials, requireSettingsAuth } = require("./src/auth");
@@ -92,6 +93,8 @@ function createApp() {
   app.use("/api/devices", requireAuth, deviceActionsRouter);
   // Dönemsel çözüm istatistikleri için snapshot geçmişi (madde 2, 13).
   app.use("/api/snapshots", requireAuth, snapshotsRouter);
+  // Yeni Kurulum Kaydı (form → sistem → Excel → mail)
+  app.use("/api/newinstalls", requireAuth, newInstallsRouter);
 
   app.use((req, res) => res.status(404).json({ error: "Bulunamadı" }));
 
