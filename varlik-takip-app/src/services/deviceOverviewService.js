@@ -5,11 +5,12 @@
 import { norm } from "./comparisonService";
 import { classifyDisk } from "./dashboardService";
 import { deviceAgeYears, daysSince } from "./unusedDeviceService";
+import { findBattery, batteryHealthState } from "./batteryFileService";
 
 const OK = "ok", WARN = "warn", CRIT = "crit", NONE = "none";
 
 // query bir string: hostname / seri no / kullanıcı adı (last logon). Eşleşen ilk cihazı döndürür.
-export function buildDeviceOverview(query, { sccmRows = [], thRows = [], monitorRows = [], inaktifRows = [], diskRows = [], staleDays = 90 } = {}) {
+export function buildDeviceOverview(query, { sccmRows = [], thRows = [], monitorRows = [], inaktifRows = [], diskRows = [], batteryRows = [], staleDays = 90 } = {}) {
   const q = norm(query);
   if (!q) return null;
 
@@ -99,7 +100,11 @@ export function buildDeviceOverview(query, { sccmRows = [], thRows = [], monitor
             ? [{ label: "Garanti Başlangıç (TH)", value: th.warrantyStartDate, state: OK, note: "BIOS Date yok — yaş bu tarihten" }]
             : []),
           { label: "Cihaz Yaşı", value: age != null ? `${age} yıl` : "Veri Yok", state: age == null ? NONE : age > 5 ? CRIT : age > 3 ? WARN : OK, note: ageSource ? `Kaynak: ${ageSource}` : "" },
-          { label: "Batarya", value: "Veri Yok", state: NONE, note: "LakeSide bağlanınca" },
+          (() => {
+            const bat = findBattery(batteryRows, sccm?.hostname || th?.hostname || inaktif?.hostname || query);
+            const bs = batteryHealthState(bat);
+            return { label: "Batarya", value: bs.value, state: bs.state, note: bat ? `LakeSide · ${bat.hostShort}` : "LakeSide Battery Health yüklenince" };
+          })(),
         ],
       },
       {

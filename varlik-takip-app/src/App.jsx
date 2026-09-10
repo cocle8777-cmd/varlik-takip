@@ -15,6 +15,7 @@ import { fetchSccmRowsFromFile, mapSccmRow } from "./services/sccmFileService";
 import { mapThRows, fetchThRowsFromFile } from "./services/thFileService";
 import { mapMonitorRows, fetchMonitorRowsFromFile } from "./services/monitorFileService";
 import { mapBsodRows } from "./services/bsodFileService";
+import { mapBatteryRows } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
 import LocationTrendChart from "./components/LocationTrendChart";
@@ -174,7 +175,7 @@ export default function App({ user, onLogout } = {}) {
   const [fileSourceTestResult, setFileSourceTestResult] = useState(null);
   // Madde 7 — "Kullanılmayan Cihazlar" raporu: "son giriş çok eski" eşiği (gün) ve ileride
   // bağlanacak LakeSide batarya dosya kaynağı. Backend'de appConfig section'ında saklanır.
-  const [appConfig, setAppConfig] = useState({ unusedStaleDays: DEFAULT_STALE_DAYS, lakesideBatterySource: { folderPath: "" } });
+  const [appConfig, setAppConfig] = useState({ unusedStaleDays: DEFAULT_STALE_DAYS });
   const [savingAppConfig, setSavingAppConfig] = useState(false);
   const staleDays = Number(appConfig.unusedStaleDays) > 0 ? Number(appConfig.unusedStaleDays) : DEFAULT_STALE_DAYS;
   // Tek dosyada tüm şirketler/departmanlar bulunuyor (Sahibi Firma sütunu ile ayrışıyor),
@@ -203,6 +204,9 @@ export default function App({ user, onLogout } = {}) {
   const [realBsodAll, setRealBsodAll] = useState([]);
   const [realBsodMeta, setRealBsodMeta] = useState(null);
   const [bsodMailTo, setBsodMailTo] = useState("");
+  // LAKESIDE "Battery Health" — TH ile aynı: elle Excel seçimi (bkz. batteryFileService.js)
+  const [realBatteryAll, setRealBatteryAll] = useState([]);
+  const [realBatteryMeta, setRealBatteryMeta] = useState(null);
 
   // Madde 1 — "Son Veri Güncelleme" artık global footer'da. Tüm gerçek veri dosyalarının
   // modifiedAt'lerinin en yenisi.
@@ -322,15 +326,12 @@ export default function App({ user, onLogout } = {}) {
         // sessiz geç
       }
     })();
-    // Madde 7 — Kullanılmayan Cihazlar eşiği + LakeSide batarya kaynağı ayarı.
+    // Madde 7 — Kullanılmayan Cihazlar "son giriş çok eski" eşiği.
     (async () => {
       try {
         const cfg = await backendClient.getAppConfig();
         if (cfg && typeof cfg === "object") {
-          setAppConfig({
-            unusedStaleDays: Number(cfg.unusedStaleDays) > 0 ? Number(cfg.unusedStaleDays) : DEFAULT_STALE_DAYS,
-            lakesideBatterySource: { folderPath: (cfg.lakesideBatterySource && cfg.lakesideBatterySource.folderPath) || "" },
-          });
+          setAppConfig({ unusedStaleDays: Number(cfg.unusedStaleDays) > 0 ? Number(cfg.unusedStaleDays) : DEFAULT_STALE_DAYS });
         }
       } catch {
         // sessiz geç
@@ -1652,20 +1653,14 @@ IT Support`;
     }
   };
 
-  // Madde 7 — "Kullanılmayan Cihazlar" eşiği + LakeSide batarya dosya kaynağı (stub).
+  // Madde 7 — "Kullanılmayan Cihazlar" eşiği. (LakeSide batarya artık dosya seçimiyle geliyor —
+  // klasör/ayar yok, bkz. handleManualBatteryFile.)
   const saveAppConfigSettings = async () => {
     setSavingAppConfig(true);
     try {
-      const payload = {
-        unusedStaleDays: staleDays,
-        lakesideBatterySource: { folderPath: (appConfig.lakesideBatterySource?.folderPath || "").trim() },
-      };
-      const saved = await backendClient.saveAppConfig(payload);
+      const saved = await backendClient.saveAppConfig({ unusedStaleDays: staleDays });
       if (saved && typeof saved === "object") {
-        setAppConfig({
-          unusedStaleDays: Number(saved.unusedStaleDays) > 0 ? Number(saved.unusedStaleDays) : DEFAULT_STALE_DAYS,
-          lakesideBatterySource: { folderPath: (saved.lakesideBatterySource && saved.lakesideBatterySource.folderPath) || "" },
-        });
+        setAppConfig({ unusedStaleDays: Number(saved.unusedStaleDays) > 0 ? Number(saved.unusedStaleDays) : DEFAULT_STALE_DAYS });
       }
       showToast("Kullanılmayan Cihazlar ayarları kaydedildi");
     } catch (err) {
@@ -1704,14 +1699,31 @@ IT Support`;
     if (folder) setFileSourceConfig({ folderPath: folder });
   };
 
-  // LakeSide batarya raporu klasörü — Dosya Kaynağı'ndaki "Gözat…" ile aynı desen (masaüstü .exe).
-  const pickLakesideFolder = async () => {
-    if (!window.varlikTakipDesktop?.pickFolder) {
-      showToast("Klasör seçme sadece masaüstü uygulamasında (.exe) çalışır — geliştirme modunda yolu elle yazmalısın");
-      return;
-    }
-    const folder = await window.varlikTakipDesktop.pickFolder();
-    if (folder) setAppConfig((prev) => ({ ...prev, lakesideBatterySource: { folderPath: folder } }));
+  // LakeSide batarya raporu — TuruncuHat/Monitor/BSOD ile aynı desen: doğrudan Excel dosyası
+  // seçilir, tarayıcıda okunur (bkz. batteryFileService.js). Klasör yolu / native diyalog YOK.
+  const handleManualBatteryFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "array", dense: true });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        let raw = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        // Başlık 1. satırda değilse (LakeSide export'larında sık) 2. satırdan dene.
+        if (raw.length && Object.keys(raw[0]).every((k) => /^__EMPTY/.test(k) || k === "")) {
+          raw = XLSX.utils.sheet_to_json(sheet, { defval: "", range: 1 });
+        }
+        const rows = mapBatteryRows(raw);
+        setRealBatteryAll(rows);
+        setRealBatteryMeta({ fileName: file.name, modifiedAt: new Date(file.lastModified).toISOString() });
+        showToast(`${file.name} içinden ${rows.length} batarya kaydı yüklendi${rows.length === 0 ? " (kolon adları tanınamadı)" : ""}`);
+      } catch (err) {
+        showToast(`Dosya okunamadı: ${err.message}`);
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   const loadRealInaktifData = async ({ silent = false } = {}) => {
@@ -3165,8 +3177,7 @@ IT Support`;
                 <p style={styles.pageSub}>
                   "Kullanılmayan Cihazlar" raporunda, SCCM'de kaydı olan bir cihazın son girişi bu gün
                   sayısından eskiyse cihaz "kullanılmıyor" sayılır (SCCM'de hiç kaydı olmayan OBS zimmetli
-                  cihazlar her hâlükârda listelenir). Batarya durumu şu an bir kaynağa bağlı değil — LakeSide
-                  raporu geldiğinde aşağıdaki klasör kullanılacak, Cihaz Genel Görünüm'de batarya kartı otomatik dolacak.
+                  cihazlar her hâlükârda listelenir).
                 </p>
                 <div style={styles.formGrid}>
                   <div style={styles.formField}>
@@ -3180,24 +3191,31 @@ IT Support`;
                       style={styles.formInput}
                     />
                   </div>
-                  <div style={styles.formFieldWide}>
-                    <label style={styles.formLabel}>LakeSide Batarya Raporu — Klasör Yolu (opsiyonel, henüz bağlı değil)</label>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <input
-                        type="text"
-                        placeholder={"C:\\Users\\...\\LakeSide\\BatteryHealth"}
-                        value={appConfig.lakesideBatterySource?.folderPath || ""}
-                        onChange={(e) => setAppConfig((prev) => ({ ...prev, lakesideBatterySource: { folderPath: e.target.value } }))}
-                        style={{ ...styles.formInput, flex: 1 }}
-                      />
-                      <button type="button" style={styles.btnGhost} onClick={pickLakesideFolder}>Gözat…</button>
-                    </div>
-                  </div>
                 </div>
                 <div style={styles.formActions}>
                   <button style={styles.btnPrimary} onClick={saveAppConfigSettings} disabled={savingAppConfig}>
                     {savingAppConfig ? "Kaydediliyor..." : "Kaydet"}
                   </button>
+                </div>
+
+                <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
+                  <p style={styles.formLabel}>LAKESIDE — Battery Health Raporu</p>
+                  <p style={styles.formHelper}>
+                    LakeSide'ın batarya sağlığı Excel'ini seçin (TuruncuHat / Monitor / BSOD ile aynı şekilde —
+                    dosya tarayıcıda okunur, klasör yolu gerekmez). Cihaz Genel Görünüm'deki "Batarya" kartı
+                    hostname eşleşmesiyle otomatik dolar (sağlık %, döngü sayısı, durum). Kolon adları
+                    tanınamazsa kayıt boş kalır, uygulama hata vermez.
+                  </p>
+                  <label style={{ ...styles.btnGhost, cursor: "pointer", display: "inline-flex", marginTop: 8 }}>
+                    Battery Health *.xlsx Seç…
+                    <input type="file" accept=".xlsx" onChange={handleManualBatteryFile} style={{ display: "none" }} />
+                  </label>
+                  {realBatteryMeta && (
+                    <p style={{ ...styles.formHelper, marginTop: 10 }}>
+                      Batarya: <strong>{realBatteryMeta.fileName}</strong> ({realBatteryAll.length} kayıt ·{" "}
+                      {realBatteryAll.filter((r) => r.batteryHealth != null).length} sağlık değeri okundu)
+                    </p>
+                  )}
                 </div>
               </div>
               </>
@@ -3833,6 +3851,7 @@ IT Support`;
                       monitorRows: realMonitorAll,
                       inaktifRows: inaktifComparisonRows.length ? inaktifComparisonRows : realInaktifAll,
                       diskRows: realDiskAll,
+                      batteryRows: realBatteryAll,
                       staleDays,
                     }}
                     styles={styles}
