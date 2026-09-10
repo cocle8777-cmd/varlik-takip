@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Chart, BarController, LineController, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend } from "chart.js";
+import { Chart, BarController, CategoryScale, LinearScale, BarElement, Tooltip } from "chart.js";
 import Donut from "./Donut";
 import Gauge from "./Gauge";
 import { combinedPeriodSummary, waterfallSegments, pctChange } from "../services/dashboardOverviewService";
 
-Chart.register(BarController, LineController, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
+Chart.register(BarController, CategoryScale, LinearScale, BarElement, Tooltip);
 
 const PERIOD_LABELS = { month: "Aylık", week: "Haftalık", raw: "Her Yükleme" };
 const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("tr-TR"));
 
-// Her kart kendi renk ailesinde — ilk bakışta ayırt edilebilsin (bkz. konuşma, referans dashboardlar).
+// Her kart kendi renk ailesinde (bkz. konuşma / referans dashboardlar).
 const C = {
   blue: "#2563EB",
   teal: "#0D9488",
@@ -18,12 +18,11 @@ const C = {
   navy: "#1E3A5F",
   slate: "#64748B",
   emerald: "#10B981",
-  coral: "#F87171",
-  purple: ["#6D28D9", "#8B5CF6", "#A78BFA", "#C4B5FD", "#DDD6FE"],
+  coral: "#EF6C6C",
+  purple: ["#7C3AED", "#9F67F0", "#B98DF3", "#D3B6F7"],
 };
 
-// Dolgulu mini alan grafiği (Semrush tarzı).
-function Spark({ values, color, width = 118, height = 34 }) {
+function Spark({ values, color, width = 120, height = 32 }) {
   const nums = (values || []).filter((v) => typeof v === "number" && !Number.isNaN(v));
   if (nums.length < 2) return <div style={{ height, width }} />;
   const min = Math.min(...nums);
@@ -80,7 +79,7 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
   const acikBulguLive = live.inaktif + live.zimmetHatali + live.kritikDisk + live.kullanilmayan;
 
   const cats = [
-    { key: "İnaktif", value: live.inaktif, color: C.purple[0] },
+    { key: "İnaktif Cihaz", value: live.inaktif, color: C.purple[0] },
     { key: "Zimmet Hatalı", value: live.zimmetHatali, color: C.purple[1] },
     { key: "Kritik Disk", value: live.kritikDisk, color: C.purple[2] },
     { key: "Kullanılmayan", value: live.kullanilmayan, color: C.purple[3] },
@@ -88,7 +87,11 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
   const catTotal = cats.reduce((s, c) => s + c.value, 0) || 1;
   const catMax = Math.max(...cats.map((c) => c.value), 1);
 
-  // ---- Waterfall ----
+  const trendRows = useMemo(() => series.slice(1), [series]); // ilk dönemin öncesi yok
+  const latestTrend = trendRows[trendRows.length - 1] || null;
+  const prevTrend = trendRows[trendRows.length - 2] || null;
+
+  // ---- Waterfall (tek Chart.js grafiği) ----
   useEffect(() => {
     if (!wfRef.current) return;
     if (wfChart.current) wfChart.current.destroy();
@@ -103,13 +106,13 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
     const colors = wf.map((s) => (s.kind === "total" ? C.slate : s.kind === "result" ? C.emerald : C.coral));
     wfChart.current = new Chart(wfRef.current, {
       type: "bar",
-      data: { labels: wf.map((s) => s.key), datasets: [{ data: bars, backgroundColor: colors, borderRadius: 5, barPercentage: 0.62 }] },
+      data: { labels: wf.map((s) => s.key), datasets: [{ data: bars, backgroundColor: colors, borderRadius: 5, barPercentage: 0.6 }] },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.label}: ${fmt(wf[c.dataIndex].value)}` } } },
         scales: {
-          x: { ticks: { color: pal.inkSoft, font: { size: 10 }, maxRotation: 20, minRotation: 0 }, grid: { display: false } },
+          x: { ticks: { color: pal.inkSoft, font: { size: 10 }, maxRotation: 18, minRotation: 0 }, grid: { display: false } },
           y: { beginAtZero: true, ticks: { color: pal.inkSoft, font: { size: 10 } }, grid: { color: pal.line } },
         },
       },
@@ -118,41 +121,37 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(wf), pal]);
 
-  // Aylık trend artık grafik değil, dönem dönem OKUNAKLI satırlar (bkz. konuşma: "çok büyük,
-  // anlaşılır değil"). Her satır: dönem etiketi + Çözülen/Devam/Yeni oranlı yatay çubuk + Çözüm Oranı %.
-  const trendRows = useMemo(() => {
-    const pts = series.slice(1); // ilk dönemin öncesi yok
-    const maxTotal = Math.max(1, ...pts.map((p) => p.cozulen + p.devam + p.yeni));
-    return pts.map((p) => ({ ...p, maxTotal }));
-  }, [series]);
-
-  const Card = ({ title, accent, minW = 300, grow = 1, children }) => (
-    <div style={{ flex: `${grow} 1 ${minW}px`, minWidth: 0, border: `1px solid ${pal.line}`, borderRadius: 14, background: pal.panelSolid || pal.panel, padding: "14px 16px", boxShadow: pal.shadow }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span style={{ width: 22, height: 3, borderRadius: 2, background: accent }} />
+  // --- ortak parçalar ---
+  const Card = ({ title, accent, span, children, pad = 16 }) => (
+    <div
+      style={{
+        gridColumn: `span ${span}`,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+        border: `1px solid ${pal.line}`,
+        borderRadius: 14,
+        background: pal.panelSolid || pal.panel,
+        boxShadow: pal.shadow,
+        padding: pad,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+        <span style={{ width: 24, height: 3, borderRadius: 2, background: accent }} />
         <span style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", color: pal.ink }}>{title}</span>
       </div>
-      {children}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{children}</div>
     </div>
   );
 
-  const NumBlock = ({ label, value, color, spark, sparkColor, delta, deltaUnit, deltaGoodNeg = true, sub }) => (
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 11, color: pal.inkSoft, fontWeight: 600 }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 24, fontWeight: 800, color: color || pal.ink, fontFamily: "monospace" }}>{value}</span>
-        <DeltaTag value={delta} unit={deltaUnit} goodWhenNegative={deltaGoodNeg} pal={pal} />
-      </div>
-      {spark ? <Spark values={spark} color={sparkColor || color || C.blue} /> : sub ? <div style={{ fontSize: 11, color: pal.inkSoft }}>{sub}</div> : null}
-    </div>
-  );
+  const okColor = (v) => (v == null ? pal.inkSoft : v >= 50 ? C.emerald : v >= 25 ? C.amber : C.coral);
 
   return (
-    <div style={{ ...styles.panel, padding: "20px 24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+    <div style={{ ...styles.panel, padding: "22px 24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
         <div>
           <p style={styles.settingsSectionTitle}>Genel Durum</p>
-          <p style={{ ...styles.pageSub, margin: 0 }}>Cihaz envanteri sağlık özeti ve IT operasyon performansı — her kart kendi grafiği ve renginde</p>
+          <p style={{ ...styles.pageSub, margin: 0 }}>Cihaz envanteri sağlık özeti ve IT operasyon performansı — her ölçüt kendi grafiği ve renginde</p>
         </div>
         <div style={styles.segmented}>
           {Object.entries(PERIOD_LABELS).map(([id, l]) => (
@@ -163,154 +162,185 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
         </div>
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-        {/* Envanter Özeti — MAVİ */}
-        <Card title="Envanter Özeti" accent={C.blue} minW={280} grow={1.4}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
-            <NumBlock label="Toplam Cihaz" value={fmt(live.toplamCihaz)} color={C.blue} sub="SCCM envanteri" />
-            <NumBlock
-              label="Açık Bulgu"
-              value={fmt(latest ? latest.acikBulgu : acikBulguLive)}
-              color={C.coral}
-              spark={series.map((s) => s.acikBulgu)}
-              sparkColor={C.coral}
-              delta={latest && prev ? pctChange(latest.acikBulgu, prev.acikBulgu) : null}
-              deltaUnit="%"
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 16 }}>
+        {/* ---- Satır 1: Sağlık özeti + 2 gösterge ---- */}
+        <Card title="Envanter Sağlığı" accent={C.blue} span={4}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <Donut
+              size={128}
+              thickness={18}
+              segments={[
+                { value: temiz, color: C.emerald, label: "Temiz" },
+                { value: Math.max(0, live.toplamCihaz - temiz), color: C.coral, label: "Problemli" },
+              ]}
+              trackColor={pal.fieldBg}
+              centerLabel={`%${saglikPct}`}
+              centerSub="sağlıklı"
             />
-            <NumBlock
-              label="Sağlıklı Cihaz"
-              value={`%${saglikPct}`}
-              color={saglikPct >= 80 ? C.emerald : saglikPct >= 60 ? C.amber : C.coral}
-              spark={series.map((s) => (live.toplamCihaz ? Math.round(((live.toplamCihaz - s.acikBulgu) / live.toplamCihaz) * 100) : 0))}
-              sparkColor={C.emerald}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 0 }}>
+              <div>
+                <div style={{ fontSize: 11, color: pal.inkSoft, fontWeight: 600 }}>Toplam Cihaz</div>
+                <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "monospace", color: C.blue }}>{fmt(live.toplamCihaz)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: pal.inkSoft, fontWeight: 600 }}>Açık Bulgu</div>
+                <div style={{ display: "flex", alignItems: "baseline" }}>
+                  <span style={{ fontSize: 22, fontWeight: 800, fontFamily: "monospace", color: C.coral }}>{fmt(latest ? latest.acikBulgu : acikBulguLive)}</span>
+                  <DeltaTag value={latest && prev ? pctChange(latest.acikBulgu, prev.acikBulgu) : null} unit="%" pal={pal} />
+                </div>
+                <Spark values={series.map((s) => s.acikBulgu)} color={C.coral} width={150} />
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Çözüm Oranı" accent={C.teal} span={4}>
+          <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
+            <Gauge
+              value={cozumOrani ?? 0}
+              centerLabel={cozumOrani != null ? `%${cozumOrani}` : "veri yok"}
+              centerSub={latest ? `${fmt(latest.cozulen)} çözülen / ${fmt(latest.cozulen + latest.devam)} önceki problem` : "en az 2 dönem gerekli"}
+              pal={pal}
+              size={210}
             />
           </div>
         </Card>
 
-        {/* Çözüm Oranı — TURKUAZ gösterge */}
-        <Card title="Çözüm Oranı" accent={C.teal} minW={210} grow={0.7}>
-          <Gauge value={cozumOrani ?? 0} centerLabel={cozumOrani != null ? `%${cozumOrani}` : "veri yok"} centerSub={latest ? `${fmt(latest.cozulen)} / ${fmt(latest.cozulen + latest.devam)}` : ""} pal={pal} size={200} />
+        <Card title="Zimmet Uyumu" accent={C.indigo} span={4}>
+          <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
+            <Gauge
+              value={zimmetUyumPct}
+              bands={[
+                { upTo: 75, color: C.coral },
+                { upTo: 90, color: "#F2C037" },
+                { upTo: 100, color: C.indigo },
+              ]}
+              centerLabel={`%${zimmetUyumPct}`}
+              centerSub={`${fmt(live.zimmetDogru)} doğru / ${fmt(live.zimmetHatali)} hatalı`}
+              pal={pal}
+              size={210}
+            />
+          </div>
         </Card>
 
-        {/* Zimmet Uyumu — İNDİGO gösterge */}
-        <Card title="Zimmet Uyumu" accent={C.indigo} minW={210} grow={0.7}>
-          <Gauge
-            value={zimmetUyumPct}
-            bands={[
-              { upTo: 75, color: C.coral },
-              { upTo: 90, color: "#F2C037" },
-              { upTo: 100, color: C.indigo },
-            ]}
-            centerLabel={`%${zimmetUyumPct}`}
-            centerSub={`${fmt(live.zimmetDogru)} doğru / ${fmt(live.zimmetHatali)} hatalı`}
-            pal={pal}
-            size={200}
-          />
-        </Card>
-
-        {/* Açık Bulgu Dağılımı — MOR donut + lejant */}
-        <Card title="Açık Bulgu Dağılımı" accent={C.purple[1]} minW={300} grow={1}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        {/* ---- Satır 2: Bulgu dağılımı (donut + detaylı tablo) ---- */}
+        <Card title="Açık Bulgu Dağılımı" accent={C.purple[0]} span={5}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flex: 1 }}>
             <Donut
-              size={140}
-              thickness={18}
+              size={150}
+              thickness={20}
               segments={cats.map((c) => ({ value: c.value, color: c.color, label: c.key }))}
               trackColor={pal.fieldBg}
               centerLabel={fmt(acikBulguLive)}
               centerSub="açık bulgu"
             />
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, minWidth: 150, flex: 1 }}>
-              {cats.map((c) => (
-                <div key={c.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color }} />
-                    {c.key}
-                  </span>
-                  <span style={{ fontWeight: 700 }}>
-                    {fmt(c.value)} <span style={{ color: pal.inkSoft, fontWeight: 400 }}>%{Math.round((c.value / catTotal) * 100)}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Card>
-
-        {/* Kategori Kırılımı — KEHRIBAR yatay bar */}
-        <Card title="Kategori Kırılımı" accent={C.amber} minW={300} grow={1}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {cats.map((c) => (
-              <div key={c.key}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
-                  <span>{c.key}</span>
-                  <span style={{ fontWeight: 700 }}>{fmt(c.value)}</span>
-                </div>
-                <div style={{ height: 9, borderRadius: 5, background: pal.fieldBg, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.round((c.value / catMax) * 100)}%`, background: C.amber, borderRadius: 5 }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        {/* Dönemsel Çözüm Performansı — dönem başına PASTA (donut) dilimi (LACİVERT) */}
-        <div style={{ flex: "1 1 100%", minWidth: 0 }}>
-          <Card title={`${PERIOD_LABELS[period]} Çözüm Performansı`} accent={C.navy}>
-            {enough ? (
-              <>
-                <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 12, color: pal.inkSoft, marginBottom: 12 }}>
-                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.emerald, marginRight: 5 }} />Çözülen</span>
-                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.slate, marginRight: 5 }} />Devam Eden</span>
-                  <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: C.coral, marginRight: 5 }} />Yeni Tespit</span>
-                  <span style={{ marginLeft: "auto" }}>Ortadaki % = çözüm oranı (çözülen ÷ önceki dönemin problemli cihazı)</span>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 26, justifyContent: "flex-start" }}>
-                  {trendRows.map((p) => {
-                    const okColor = p.cozumOrani == null ? pal.inkSoft : p.cozumOrani >= 50 ? C.emerald : p.cozumOrani >= 25 ? C.amber : C.coral;
-                    return (
-                      <div key={p.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, minWidth: 150 }}>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: pal.ink }}>{p.label}</span>
-                        <Donut
-                          size={150}
-                          thickness={22}
-                          segments={[
-                            { value: p.cozulen, color: C.emerald, label: "Çözülen" },
-                            { value: p.devam, color: C.slate, label: "Devam Eden" },
-                            { value: p.yeni, color: C.coral, label: "Yeni Tespit" },
-                          ]}
-                          trackColor={pal.fieldBg}
-                          centerLabel={p.cozumOrani != null ? `%${p.cozumOrani}` : "—"}
-                          centerSub="çözüm oranı"
-                        />
-                        <span style={{ fontSize: 11.5, color: pal.inkSoft, textAlign: "center" }}>
-                          <strong style={{ color: C.emerald }}>{fmt(p.cozulen)}</strong> çöz&nbsp;·&nbsp;
-                          <strong style={{ color: pal.ink }}>{fmt(p.devam)}</strong> devam&nbsp;·&nbsp;
-                          <strong style={{ color: C.coral }}>{fmt(p.yeni)}</strong> yeni
-                        </span>
-                        <span style={{ fontSize: 11, color: okColor, fontWeight: 700 }}>
-                          toplam {fmt(p.acikBulgu)} açık bulgu
-                        </span>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ color: pal.inkSoft, fontSize: 11 }}>
+                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>Kategori</th>
+                  <th style={{ textAlign: "right", padding: "4px 6px", fontWeight: 600 }}>Adet</th>
+                  <th style={{ textAlign: "right", padding: "4px 6px", fontWeight: 600 }}>Pay</th>
+                  <th style={{ width: "34%", padding: "4px 6px" }} />
+                </tr>
+              </thead>
+              <tbody>
+                {cats.map((c) => (
+                  <tr key={c.key} style={{ borderTop: `1px solid ${pal.line}` }}>
+                    <td style={{ padding: "6px 6px" }}>
+                      <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: c.color, marginRight: 7 }} />
+                      {c.key}
+                    </td>
+                    <td style={{ textAlign: "right", padding: "6px 6px", fontWeight: 700, fontFamily: "monospace" }}>{fmt(c.value)}</td>
+                    <td style={{ textAlign: "right", padding: "6px 6px", color: pal.inkSoft }}>%{Math.round((c.value / catTotal) * 100)}</td>
+                    <td style={{ padding: "6px 6px" }}>
+                      <div style={{ height: 7, borderRadius: 4, background: pal.fieldBg }}>
+                        <div style={{ height: "100%", width: `${Math.round((c.value / catMax) * 100)}%`, background: c.color, borderRadius: 4 }} />
                       </div>
-                    );
-                  })}
-                </div>
-              </>
-            ) : (
-              <p style={{ ...styles.pageSub, margin: 0 }}>En az 2 dönem verisi gerekli — snapshot geçmişi biriktikçe dolacak.</p>
-            )}
-          </Card>
-        </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
 
-        {/* Cihaz Sağlık Şelalesi — ARDUVAZ / MERCAN / ZÜMRÜT (tam satır) */}
-        <div style={{ flex: "1 1 100%", minWidth: 0 }}>
-          <Card title="Cihaz Sağlık Şelalesi" accent={C.slate}>
-            <p style={{ ...styles.pageSub, margin: "0 0 8px", fontSize: 11.5 }}>
-              Toplam {fmt(live.toplamCihaz)} → problem kategorileri çıkınca kalan "temiz" cihaz (kategoriler çakışabilir)
-            </p>
-            <div style={{ height: 240, minWidth: 0 }}>
-              <canvas ref={wfRef} />
+        {/* ---- Satır 2: Cihaz Sağlık Şelalesi ---- */}
+        <Card title="Cihaz Sağlık Şelalesi" accent={C.slate} span={7}>
+          <p style={{ ...styles.pageSub, margin: "0 0 8px", fontSize: 11.5 }}>
+            Toplam {fmt(live.toplamCihaz)} cihazdan problem kategorileri çıkınca kalan "temiz" cihaz (kategoriler çakışabilir)
+          </p>
+          <div style={{ flex: 1, minHeight: 250 }}>
+            <canvas ref={wfRef} />
+          </div>
+        </Card>
+
+        {/* ---- Satır 3: Dönemsel Çözüm Performansı — donut + detaylı tablo ---- */}
+        <Card title={`${PERIOD_LABELS[period]} Çözüm Performansı`} accent={C.navy} span={12}>
+          {enough && latestTrend ? (
+            <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: pal.ink }}>{latestTrend.label} dönemi</span>
+                <Donut
+                  size={168}
+                  thickness={24}
+                  segments={[
+                    { value: latestTrend.cozulen, color: C.emerald, label: "Çözülen" },
+                    { value: latestTrend.devam, color: C.slate, label: "Devam Eden" },
+                    { value: latestTrend.yeni, color: C.coral, label: "Yeni Tespit" },
+                  ]}
+                  trackColor={pal.fieldBg}
+                  centerLabel={latestTrend.cozumOrani != null ? `%${latestTrend.cozumOrani}` : "—"}
+                  centerSub="çözüm oranı"
+                />
+                <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: pal.inkSoft, flexWrap: "wrap", justifyContent: "center" }}>
+                  <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: C.emerald, marginRight: 4 }} />Çözülen</span>
+                  <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: C.slate, marginRight: 4 }} />Devam Eden</span>
+                  <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: C.coral, marginRight: 4 }} />Yeni Tespit</span>
+                </div>
+                {prevTrend && prevTrend.cozumOrani != null && latestTrend.cozumOrani != null && (
+                  <span style={{ fontSize: 12 }}>
+                    Önceki dönem <strong>%{prevTrend.cozumOrani}</strong>
+                    <DeltaTag value={Math.round((latestTrend.cozumOrani - prevTrend.cozumOrani) * 10) / 10} unit=" pp" goodWhenNegative={false} pal={pal} />
+                  </span>
+                )}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 320, overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                  <thead>
+                    <tr style={{ color: pal.inkSoft, fontSize: 11 }}>
+                      <th style={{ textAlign: "left", padding: "6px 8px", fontWeight: 600 }}>Dönem</th>
+                      <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600 }}>Açık Bulgu</th>
+                      <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, color: C.emerald }}>Çözülen</th>
+                      <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600 }}>Devam Eden</th>
+                      <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, color: C.coral }}>Yeni Tespit</th>
+                      <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600 }}>Çözüm Oranı</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trendRows.map((p) => (
+                      <tr key={p.label} style={{ borderTop: `1px solid ${pal.line}` }}>
+                        <td style={{ padding: "8px 8px", fontWeight: 700 }}>{p.label}</td>
+                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: "monospace" }}>{fmt(p.acikBulgu)}</td>
+                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: "monospace", color: C.emerald, fontWeight: 700 }}>{fmt(p.cozulen)}</td>
+                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: "monospace" }}>{fmt(p.devam)}</td>
+                        <td style={{ padding: "8px 8px", textAlign: "right", fontFamily: "monospace", color: C.coral, fontWeight: 700 }}>{fmt(p.yeni)}</td>
+                        <td style={{ padding: "8px 8px", textAlign: "right" }}>
+                          <span style={{ fontFamily: "monospace", fontWeight: 800, color: okColor(p.cozumOrani) }}>{p.cozumOrani != null ? `%${p.cozumOrani}` : "—"}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p style={{ ...styles.pageSub, margin: "8px 0 0", fontSize: 11 }}>
+                  Çözüm Oranı = Çözülen ÷ (Çözülen + Devam Eden) — önceki dönemdeki problemli cihazların yüzde kaçı listeden düştü.
+                </p>
+              </div>
             </div>
-          </Card>
-        </div>
+          ) : (
+            <p style={{ ...styles.pageSub, margin: 0 }}>En az 2 dönem verisi gerekli — snapshot geçmişi biriktikçe dolacak.</p>
+          )}
+        </Card>
       </div>
     </div>
   );
