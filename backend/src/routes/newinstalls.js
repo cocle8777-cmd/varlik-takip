@@ -23,6 +23,8 @@ const COLUMNS = [
   ["installer", "Kuran Kişi"],
   ["notes", "Notlar"],
 ];
+// Türetilmiş Excel sütunu — mail gönderildiyse 1, gönderilmediyse 0.
+const MAIL_COL = "Mail Gönderildi";
 
 const DEFAULT_EXCEL = "C:/Users/Lenovo/varlik-test-data-3month/YeniKurulumlar-DEMO.xlsx";
 
@@ -74,6 +76,23 @@ router.delete("/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+// Mail gönderildi işaretle — frontend başarılı gönderim sonrası çağırır.
+router.post("/mark-mailed", (req, res) => {
+  const state = load();
+  const ids = new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String));
+  const now = new Date().toISOString();
+  let marked = 0;
+  state.records = state.records.map((r) => {
+    if (ids.has(String(r.id)) && !r.mailSentAt) {
+      marked++;
+      return { ...r, mailSentAt: now };
+    }
+    return r;
+  });
+  save(state);
+  res.json({ ok: true, marked });
+});
+
 // Excel yolu ayarı
 router.put("/config/excel-path", (req, res) => {
   const state = load();
@@ -101,12 +120,13 @@ router.post("/sync-excel", (req, res) => {
       if (ws) existingRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
     }
 
-    // Sistemdeki kayıtları Excel satırına çevir
+    // Sistemdeki kayıtları Excel satırına çevir + "Mail Gönderildi" (1/0) sütunu
     const sysRows = state.records.map((r) => {
       const o = {};
       COLUMNS.forEach(([k, label]) => {
         o[label] = r[k] || "";
       });
+      o[MAIL_COL] = r.mailSentAt ? 1 : 0;
       return o;
     });
 
@@ -115,10 +135,10 @@ router.post("/sync-excel", (req, res) => {
     const keptManual = existingRows.filter((row) => {
       const key = `${row["Seri No"] || ""}|${row["Hostname"] || ""}`.toLowerCase();
       return key !== "|" && !sysKeys.has(key);
-    });
+    }).map((row) => ({ ...row, [MAIL_COL]: row[MAIL_COL] === 1 || row[MAIL_COL] === "1" ? 1 : 0 }));
 
     const allRows = [...keptManual, ...sysRows];
-    const ws = XLSX.utils.json_to_sheet(allRows, { header: COLUMNS.map(([, l]) => l) });
+    const ws = XLSX.utils.json_to_sheet(allRows, { header: [...COLUMNS.map(([, l]) => l), MAIL_COL] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Kurulumlar");
     XLSX.writeFile(wb, target);

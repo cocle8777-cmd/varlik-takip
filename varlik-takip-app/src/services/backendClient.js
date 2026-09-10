@@ -138,6 +138,7 @@ export const backendClient = {
   deleteNewInstall: (id) => request(`/newinstalls/${encodeURIComponent(id)}`, { method: "DELETE" }),
   setNewInstallExcelPath: (excelPath) => request("/newinstalls/config/excel-path", { method: "PUT", body: JSON.stringify({ excelPath }) }),
   syncNewInstallExcel: (excelPath) => request("/newinstalls/sync-excel", { method: "POST", body: JSON.stringify({ excelPath }) }),
+  markNewInstallsMailed: (ids) => request("/newinstalls/mark-mailed", { method: "POST", body: JSON.stringify({ ids }) }),
 
   getInaktifCihazlarReport: () => request("/reports/inaktif-cihazlar"),
   getDiskAlaniReport: () => request("/reports/disk-alani"),

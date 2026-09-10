@@ -159,6 +159,10 @@ export default function NewInstallScreen({ styles, pal, user, mailGroupsText, re
         html: buildMailHtml(targetRecs),
       });
       const ok = !!r.ok;
+      if (ok) {
+        await backendClient.markNewInstallsMailed(targetRecs.map((x) => x.id)).catch(() => {});
+        await reload();
+      }
       recordMailHistory &&
         recordMailHistory({
           id: Date.now(),
@@ -224,6 +228,9 @@ export default function NewInstallScreen({ styles, pal, user, mailGroupsText, re
       <div style={{ ...styles.panel, padding: "20px 24px" }}>
         <div style={styles.settingsSectionHead}>
           <p style={styles.settingsSectionTitle}>Kayıtlar ({records.length})</p>
+          <span style={{ fontSize: 12.5, color: pal.inkSoft }}>
+            {records.filter((r) => r.excelSyncedAt).length} Excel'e işlendi · {records.filter((r) => r.mailSentAt).length} mail gönderildi
+          </span>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "6px 0 14px" }}>
@@ -273,6 +280,7 @@ export default function NewInstallScreen({ styles, pal, user, mailGroupsText, re
                     <th key={f.k} style={styles.th}>{f.label}</th>
                   ))}
                   <th style={styles.th}>Excel</th>
+                  <th style={styles.th}>Mail</th>
                   <th style={styles.th}>Aksiyon</th>
                 </tr>
               </thead>
@@ -292,6 +300,13 @@ export default function NewInstallScreen({ styles, pal, user, mailGroupsText, re
                         <span style={{ ...styles.badge, ...styles.badgeOk }}>işlendi</span>
                       ) : (
                         <span style={{ ...styles.badge, ...styles.badgeNeutral }}>bekliyor</span>
+                      )}
+                    </td>
+                    <td style={styles.td}>
+                      {r.mailSentAt ? (
+                        <span style={{ ...styles.badge, ...styles.badgeOk }} title={new Date(r.mailSentAt).toLocaleString("tr-TR")}>gönderildi · 1</span>
+                      ) : (
+                        <span style={{ ...styles.badge, ...styles.badgeNeutral }}>gönderilmedi · 0</span>
                       )}
                     </td>
                     <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
