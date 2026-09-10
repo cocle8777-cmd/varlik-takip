@@ -32,6 +32,7 @@ export const REPORT_CATEGORIES = [
     name: "LAKESIDE",
     reports: [
       { id: "battery-health", name: "Battery Health" },
+      { id: "ajan-yuklu", name: "Ajan Yüklü Cihazlar" },
       { id: "bsod", name: "BSOD" },
     ],
   },
