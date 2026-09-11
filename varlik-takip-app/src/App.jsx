@@ -2485,6 +2485,13 @@ IT Support`;
             className="no-print"
             style={{
               position: "sticky", top: 16, zIndex: 20,
+              // .main flex column olduğu için (align-items varsayılanı "stretch") bu satır
+              // GENİŞLİĞİ boyunca tam eninde, görünmez bir kutu olarak yayılıyordu — sticky
+              // pinlenince bu görünmez ama z-index'i yüksek kutu, altından geçen geniş kartların
+              // (ör. stat kartları satırı) üzerine "şeffaf" biniyordu (bkz. konuşma — kullanıcı
+              // ekran görüntüsüyle gösterdi). alignSelf:"flex-end" ile kutu sadece kendi
+              // içeriği (butonlar) kadar yer kaplıyor, tam genişlik yayılmıyor.
+              alignSelf: "flex-end",
               display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap",
             }}
           >
