@@ -236,7 +236,14 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
           .some((v) => v.includes(q))
       );
     }
-    return list;
+    // Yeni kurulan cihaz en üstte görünsün — takip kolaylaşsın (bkz. konuşma). createdAt yoksa
+    // (eski kayıt) id/date'e düşer, en azından backend ekleme sırasının tersini verir.
+    return [...list].sort((a, b) => {
+      const ta = Date.parse(a.createdAt || "") || 0;
+      const tb = Date.parse(b.createdAt || "") || 0;
+      if (tb !== ta) return tb - ta;
+      return String(b.id).localeCompare(String(a.id));
+    });
   }, [records, qFilter, qText]);
 
   const allChecked = filteredRecords.length > 0 && filteredRecords.every((r) => selected.has(r.id));
