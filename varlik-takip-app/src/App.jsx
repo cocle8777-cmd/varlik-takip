@@ -2273,6 +2273,24 @@ IT Support`;
         ::-webkit-scrollbar { width: 9px; }
         ::-webkit-scrollbar-thumb { background: ${pal.scrollbarThumb}; border-radius: 10px; }
         input:focus, select:focus { outline: none; }
+        /* Native tarayıcı tooltip'i (title özniteliği) yerine — kullanıcı sağ üstteki sabit
+           (fixed) çubukta "Çıkış Yap" tooltip'inin sayfanın üst kenarına yakın olduğu için
+           garip/kırpık göründüğünü, kullanıcı kartıyla üst üste bindiğini bildirdi (bkz.
+           konuşma). Bu özel tooltip her zaman elemanın ALTINDA açılır, konumu tamamen CSS ile
+           kontrol edilir — üst kenara ne kadar yakın olursa olsun taşma/çakışma olmaz.
+        */
+        .vt-tip { position: relative; }
+        .vt-tip::after {
+          content: attr(data-tip);
+          position: absolute; top: calc(100% + 6px); right: 0; z-index: 50;
+          background: ${pal.toastBg}; color: ${pal.toastFg};
+          font-size: 11.5px; font-weight: 600; white-space: nowrap;
+          padding: 5px 9px; border-radius: 6px; box-shadow: ${pal.shadow};
+          opacity: 0; visibility: hidden; transform: translateY(-4px);
+          transition: opacity .12s ease, transform .12s ease;
+          pointer-events: none;
+        }
+        .vt-tip:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
         @media print {
           .no-print { display: none !important; }
           body, .vt-body { background: #fff !important; padding: 0 !important; }
@@ -2471,17 +2489,16 @@ IT Support`;
               display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap",
             }}
           >
-            <div style={styles.themeToggle} title="Temayı değiştir">
+            <div className="vt-tip" data-tip="Temayı değiştir" style={styles.themeToggle}>
               <span onClick={() => setTheme("light")} style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
               <span onClick={() => setTheme("dark")} style={{ ...styles.themeToggleBtn, ...(theme === "dark" ? styles.themeToggleBtnActive : {}) }}>☾</span>
               {/* "Aero" — havacılık/glassmorphism deneme teması (bkz. konuşma), ışık/koyunun yanına
                   seçilebilir üçüncü seçenek olarak eklendi. */}
-              <span onClick={() => setTheme("aero")} title="Aero (deneme)" style={{ ...styles.themeToggleBtn, ...(theme === "aero" ? styles.themeToggleBtnActive : {}) }}>✈</span>
+              <span onClick={() => setTheme("aero")} style={{ ...styles.themeToggleBtn, ...(theme === "aero" ? styles.themeToggleBtnActive : {}) }}>✈</span>
             </div>
             <button
               style={{ ...styles.btnGhost, display: "flex", alignItems: "center", gap: 6, ...(showSettings ? styles.deptItemActive : {}) }}
               onClick={() => { closeAllViews(); setShowSettings(true); }}
-              title="Ayarlar"
             >
               ⚙ Ayarlar
             </button>
@@ -2496,8 +2513,9 @@ IT Support`;
                   {(user.username || "?").slice(0, 1).toUpperCase()}
                 </div>
                 <div
+                  className="vt-tip"
+                  data-tip="Şifre değiştirmek için tıkla"
                   style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, cursor: "pointer", maxWidth: 140 }}
-                  title="Şifre değiştirmek için tıkla"
                   onClick={() => setChangePasswordOpen(true)}
                 >
                   <span style={{ fontSize: 13, fontWeight: 700, color: pal.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.username}</span>
@@ -2505,7 +2523,8 @@ IT Support`;
                 </div>
                 <button
                   onClick={onLogout}
-                  title="Çıkış Yap"
+                  className="vt-tip"
+                  data-tip="Çıkış Yap"
                   style={{ border: "none", background: "transparent", cursor: "pointer", color: pal.inkSoft, fontSize: 17, lineHeight: 1, padding: "2px 2px 2px 6px", flexShrink: 0 }}
                 >
                   ⏻
