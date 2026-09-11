@@ -34,7 +34,13 @@ const DEFAULT_EXCEL = "C:/Users/Lenovo/varlik-test-data-3month/YeniKurulumlar-DE
 
 function load() {
   const s = readSection(SECTION) || {};
-  return { records: Array.isArray(s.records) ? s.records : [], excelPath: s.excelPath || DEFAULT_EXCEL };
+  return {
+    records: Array.isArray(s.records) ? s.records : [],
+    excelPath: s.excelPath || DEFAULT_EXCEL,
+    // Bugüne kadar "sistem tarafından yazılmış" (SERİ NO|HOSTNAME) anahtarların kalıcı listesi —
+    // bkz. sync-excel'deki hata düzeltmesi notu.
+    managedKeys: Array.isArray(s.managedKeys) ? s.managedKeys : [],
+  };
 }
 function save(state) {
   writeSection(SECTION, state);
@@ -134,11 +140,21 @@ router.post("/sync-excel", (req, res) => {
       return o;
     });
 
-    // Sistemde OLMAYAN (dosyada elle eklenmiş) satırları da koru — seri no + hostname anahtarıyla
+    // Sistemde OLMAYAN (dosyada elle eklenmiş) satırları da koru — seri no + hostname anahtarıyla.
+    // ÖNEMLİ: sadece "şu an" sistemde olan kayıtların anahtarına değil, sistemin BUGÜNE KADAR
+    // yazdığı TÜM anahtarlara (managedKeys) bakılır. Aksi halde şu senaryoda hata oluşuyordu
+    // (bkz. konuşma — "yeni cihaz eklediğimde listeyi tekrar aynı şekilde ekliyor"): bir kayıt
+    // Excel'e işlenir → sonra o kayıt uygulamadan silinir (ör. yanlış girilmiş) → satırı hâlâ
+    // dosyada duruyor ama artık "sistemde yok" göründüğü için bir sonraki işlemede YANLIŞLIKLA
+    // "elle eklenmiş" sayılıp korunuyordu; aynı seri no ile yeni bir kayıt eklenip tekrar
+    // işlendiğinde ESKİ (öksüz kalmış) satır + YENİ satır yan yana kalıyor, sanki "liste tekrar
+    // eklenmiş" gibi görünüyordu. managedKeys bu geçmişi hatırladığı için öksüz satır artık kalıcı
+    // olarak dosyadan düşer (silinen kayıt Excel'den de temizlenmiş olur) — mükerrer oluşmaz.
     const sysKeys = new Set(state.records.map((r) => `${r.serial}|${r.hostname}`.toLowerCase()));
+    const managedKeys = new Set([...(state.managedKeys || []), ...sysKeys]);
     const keptManual = existingRows.filter((row) => {
       const key = `${row["SERİ NO"] || row["Seri No"] || ""}|${row["HOSTNAME"] || row["Hostname"] || ""}`.toLowerCase();
-      return key !== "|" && !sysKeys.has(key);
+      return key !== "|" && !managedKeys.has(key);
     }).map((row) => ({ ...row, [MAIL_COL]: row[MAIL_COL] === 1 || row[MAIL_COL] === "1" ? 1 : 0 }));
 
     const allRows = [...keptManual, ...sysRows];
@@ -154,6 +170,7 @@ router.post("/sync-excel", (req, res) => {
       return { ...r, excelSyncedAt: r.excelSyncedAt || now };
     });
     state.excelPath = target;
+    state.managedKeys = [...managedKeys].slice(-5000); // güvenlik sınırı — sonsuz büyümesin
     save(state);
 
     res.json({
