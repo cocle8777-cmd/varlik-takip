@@ -3829,6 +3829,29 @@ IT Support`;
                 </div>
               </div>
 
+              {/* Madde 10, 11 — "Cihaz Genel Görünüm": hostname/seri no/last logon ile arama,
+                  cihazın tüm kaynaklardaki durumu OK/Kontrol/Kritik/Veri Yok rozetli kartlarda.
+                  Önceden Kullanılmayan Cihazlar raporunun EN ALTINDAYDI — kullanıcı isteğiyle
+                  başlık/istatistik şeridinin hemen altına, liste/filtrelerin ÜSTÜNE taşındı
+                  (bkz. konuşma) — arama aracı olduğu için önce görünmesi daha kullanışlı. */}
+              {isUnused && (
+                <div style={{ marginBottom: 16 }}>
+                  <DeviceOverviewCard
+                    sources={{
+                      sccmRows: realSccmAll,
+                      thRows: realThAll,
+                      monitorRows: realMonitorAll,
+                      inaktifRows: inaktifComparisonRows.length ? inaktifComparisonRows : realInaktifAll,
+                      diskRows: realDiskAll,
+                      batteryRows: realBatteryAll,
+                      staleDays,
+                    }}
+                    styles={styles}
+                    pal={pal}
+                  />
+                </div>
+              )}
+
               <div style={detailRow ? styles.detailLayoutRow : undefined}>
               <div style={styles.panel} className="print-area">
                 <div style={styles.toolbar} className="no-print">
@@ -4149,27 +4172,6 @@ IT Support`;
                 />
               )}
               </div>
-
-              {/* Madde 10, 11 — "Cihaz Genel Görünüm": hostname/seri no/last logon ile arama,
-                  cihazın tüm kaynaklardaki durumu OK/Kontrol/Kritik/Veri Yok rozetli kartlarda.
-                  Kullanılmayan Cihazlar raporunun altında (aynı panel deseni). */}
-              {isUnused && (
-                <div style={{ marginTop: 16 }}>
-                  <DeviceOverviewCard
-                    sources={{
-                      sccmRows: realSccmAll,
-                      thRows: realThAll,
-                      monitorRows: realMonitorAll,
-                      inaktifRows: inaktifComparisonRows.length ? inaktifComparisonRows : realInaktifAll,
-                      diskRows: realDiskAll,
-                      batteryRows: realBatteryAll,
-                      staleDays,
-                    }}
-                    styles={styles}
-                    pal={pal}
-                  />
-                </div>
-              )}
             </>
           )}
         </div>
