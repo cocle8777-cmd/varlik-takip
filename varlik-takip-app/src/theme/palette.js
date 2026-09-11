@@ -89,10 +89,10 @@ export const AERO_PALETTE = {
   line: "rgba(255,255,255,0.12)",
   // ink/inkSoft mockup'takinden (E2E8F0/94A3B8) bilerek daha parlak — panel neredeyse tamamen
   // saydam (rgba(255,255,255,0.04)) olduğu için zemin koyu gri kalıyor, düşük kontrastlı metin
-  // "sönük" duruyordu (bkz. konuşma). DARK_PALETTE'in kendi ink/inkSoft'una (F5EFE6/B0A493)
-  // yakın parlaklıkta, sadece soğuk (mavi-gri) tonda tutuldu.
-  ink: "#F1F5F9",
-  inkSoft: "#B4C0CE",
+  // "sönük" duruyordu (bkz. konuşma — "beyaz yazılar daha net olabilir, bütün hepsini kapsa").
+  // ink artık saf beyaz, inkSoft/neutralFg de belirgin şekilde açıldı.
+  ink: "#FFFFFF",
+  inkSoft: "#CBD5E1",
   accent: "#0EA5E9",
   accentGrad: "linear-gradient(135deg, #0EA5E9, #0284C7)",
   accentSoft: "rgba(14,165,233,0.16)",
@@ -101,7 +101,7 @@ export const AERO_PALETTE = {
   okBg: "rgba(16,185,129,0.16)",
   bad: "#FCA5A5",
   badBg: "rgba(239,68,68,0.20)",
-  neutralFg: "#B4C0CE",
+  neutralFg: "#CBD5E1",
   neutralBg: "rgba(255,255,255,0.08)",
   neutralDot: "#64748B",
   fieldBg: "rgba(255,255,255,0.07)",
