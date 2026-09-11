@@ -2465,12 +2465,8 @@ IT Support`;
               </div>
               {mailHistory.length > 0 && <span style={{ ...styles.deptCount, ...(showHistory ? styles.deptCountActive : {}) }}>{mailHistory.length}</span>}
             </div>
-            <div onClick={() => { closeAllViews(); setShowSettings(true); }} style={{ ...styles.deptItem, ...(showSettings ? styles.deptItemActive : {}) }}>
-              <div style={styles.deptLeft}>
-                <span style={{ ...styles.deptDot, ...(showSettings ? styles.deptDotActive : {}) }} />
-                Ayarlar
-              </div>
-            </div>
+            {/* Ayarlar buradan kaldırıldı — tek erişim noktası artık sağ üstteki "⚙ Ayarlar"
+                butonu (bkz. konuşma). */}
           </div>
         </aside>
 
