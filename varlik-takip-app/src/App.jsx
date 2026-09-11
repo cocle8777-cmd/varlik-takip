@@ -353,7 +353,6 @@ export default function App({ user, onLogout } = {}) {
     snapshotTimers.current[reportId] = setTimeout(() => doPostSnapshot(reportId, sourceMeta, problemRows), 2000);
   };
   const doPostSnapshot = (reportId, sourceMeta, problemRows) => {
-    const prevSnap = (reportSnapshots[reportId] || []).slice(-1)[0];
     const currDevices = problemRows.map((r) => ({
       key: deviceKeyOf(r),
       hostname: r.hostname || "",
@@ -368,22 +367,11 @@ export default function App({ user, onLogout } = {}) {
         if (!res || !res.ok || res.skipped) return;
         // Snapshot listesini güncel tut ki yönetim paneli anında yeni dönemi görsün.
         backendClient.getSnapshots().then((s) => s && setReportSnapshots(s)).catch(() => {});
-        // Rapordan ÇIKAN (çözülen) cihazlar için aksiyon geçmişine kayıt (madde 5 bağlantısı).
-        if (prevSnap) {
-          const currKeys = new Set(currDevices.map((d) => d.key));
-          (prevSnap.devices || [])
-            .filter((d) => d.key && !currKeys.has(d.key))
-            .slice(0, 300)
-            .forEach((d) =>
-              logDeviceAction(d, {
-                type: "Rapordan Çıktı",
-                description: `${reportId} raporundan çıktı (çözüldü/listeden düştü)`,
-                user: user?.username || "",
-                reportId,
-                status: "Çözüldü",
-              })
-            );
-        }
+        // NOT: Rapordan çıkan cihazlar için "Rapordan Çıktı" aksiyon-geçmişi kaydı kaldırıldı
+        // (bkz. konuşma) — her yenilemede aynı cihaz için art arda gürültülü/neredeyse mükerrer
+        // kayıtlar üretiyordu ve Cihaz Aksiyon Geçmişi'nde anlamlı bir sinyal taşımıyordu.
+        // Dönemsel Devam Eden/Çözülen/Yeni istatistikleri hâlâ prevSnap karşılaştırmasından
+        // (raporların kendi ekranlarında) hesaplanıyor — bu sadece device-action logunu kesiyor.
       })
       .catch(() => {});
   };
