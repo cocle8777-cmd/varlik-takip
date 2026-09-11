@@ -63,7 +63,7 @@ export default function LoginScreen({ onLoginSuccess }) {
           >
             <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </div>
-          <p style={{ ...styles.pageTitle, fontSize: 21, textAlign: "center" }}>TK Envanter Tool</p>
+          <p style={{ ...styles.pageTitle, fontSize: 21, textAlign: "center" }}>TK Asset Manager</p>
           <p style={{ ...styles.pageSub, textAlign: "center" }}>Devam etmek için kurumsal bilgilerinizle giriş yapın</p>
         </div>
 

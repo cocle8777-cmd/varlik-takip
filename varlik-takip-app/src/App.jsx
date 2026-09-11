@@ -2310,7 +2310,7 @@ IT Support`;
             <div style={{ width: "100%", height: 56, borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: pal.shadow, padding: 8 }}>
               <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
             </div>
-            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.01em", color: pal.ink }}>TK Envanter Tool</div>
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.01em", color: pal.ink }}>TK Asset Manager</div>
           </div>
 
           <div style={styles.deptList}>
