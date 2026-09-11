@@ -2450,11 +2450,19 @@ IT Support`;
         </aside>
 
         {/* MAIN */}
-        <div style={styles.main}>
+        <div style={{ ...styles.main, position: "relative" }}>
           {/* Tema değiştirici + Ayarlar + kullanıcı kartı — logo/marka satırından ayrılıp sağ
               üste taşındı (bkz. konuşma). Her ekranda görünsün diye showDashboard/showSettings/vb.
-              koşullarının ÜSTÜNDE, sabit olarak render ediliyor. */}
-          <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+              koşullarının ÜSTÜNDE, sabit olarak render ediliyor. Ayrı bir satır/boşluk yaratmasın
+              diye akıştan çıkarılıp ilk panelin başlık satırının üzerine mutlak konumlandırıldı —
+              böylece altındaki içerik yukarı kayar (bkz. konuşma). */}
+          <div
+            className="no-print"
+            style={{
+              position: "absolute", top: 20, right: 24, zIndex: 5,
+              display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap",
+            }}
+          >
             <div style={styles.themeToggle} onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))} title="Temayı değiştir">
               <span style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
               <span style={{ ...styles.themeToggleBtn, ...(theme === "dark" ? styles.themeToggleBtnActive : {}) }}>☾</span>
