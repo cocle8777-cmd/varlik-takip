@@ -175,7 +175,12 @@ export function buildStyles(p) {
     detailAside: { background: p.panel, backdropFilter: "blur(18px)", border: `1px solid ${p.line}`, borderRadius: 16, boxShadow: p.shadow, padding: 32, display: "flex", flexDirection: "column", gap: 22, position: "sticky", top: 20, fontSize: 16, minWidth: 0, maxWidth: "100%", overflowWrap: "break-word" },
     detailEmpty: { fontSize: 14.5, color: p.inkSoft, textAlign: "center", padding: "44px 12px" },
     detailAvatar: { width: 60, height: 60, borderRadius: 14, background: p.accentSoft, color: p.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 19, fontFamily: "monospace", flexShrink: 0 },
-    detailFieldRow: { display: "flex", justifyContent: "space-between", padding: "15px 0", borderBottom: `1px solid ${p.line}`, fontSize: 15.5 },
+    // gap eklendi: değer kısa olduğunda (ör. "SUBE-C") space-between zaten geniş boşluk
+    // bırakıyordu, ama uzun bir cümle (ör. Kullanılmayan Cihazlar'daki inaktif açıklama metni)
+    // satırı doldurup "boşta kalan alanı" sıfırlayınca etiket ve değer bitişik/boşluksuz
+    // görünüyordu (bkz. konuşma — ekran görüntüsüyle işaretlendi: "ModelSYNOB000000..."). gap,
+    // içerik ne kadar uzun olursa olsun aralarında asgari boşluğu garanti eder.
+    detailFieldRow: { display: "flex", justifyContent: "space-between", gap: 14, padding: "15px 0", borderBottom: `1px solid ${p.line}`, fontSize: 15.5 },
     detailAlert: { padding: "16px 18px", borderRadius: 10, background: p.badBg, border: `1px solid ${p.bad}33` },
     detailAlertTitle: { fontSize: 15, fontWeight: 700, color: p.bad },
     detailAlertBody: { marginTop: 5, fontSize: 14, lineHeight: 1.55, color: p.inkSoft },
