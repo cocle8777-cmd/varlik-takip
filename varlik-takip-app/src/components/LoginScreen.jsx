@@ -49,15 +49,16 @@ export default function LoginScreen({ onLoginSuccess }) {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, marginBottom: 8 }}>
           <div
             style={{
-              width: 72,
-              height: 72,
+              width: 280,
+              maxWidth: "100%",
+              height: 90,
               borderRadius: 16,
               background: "#fff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               boxShadow: pal.shadow,
-              padding: 8,
+              padding: 14,
             }}
           >
             <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />

@@ -2283,7 +2283,7 @@ IT Support`;
         <aside style={styles.sidebar} className="no-print">
           <div style={styles.brand}>
             <div style={styles.brandLeft}>
-              <div style={{ width: 28, height: 28, borderRadius: 7, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: pal.shadow, padding: 3 }}>
+              <div style={{ width: 56, height: 24, borderRadius: 6, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: pal.shadow, padding: 4 }}>
                 <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               </div>
               <div style={styles.brandName}>TK Envanter Tool</div>
