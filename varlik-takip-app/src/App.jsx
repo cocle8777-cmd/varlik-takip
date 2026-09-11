@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import thyLogo from "./assets/thy-logo.svg";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -2282,8 +2283,10 @@ IT Support`;
         <aside style={styles.sidebar} className="no-print">
           <div style={styles.brand}>
             <div style={styles.brandLeft}>
-              <div style={styles.brandMark} />
-              <div style={styles.brandName}>Varlık Takip</div>
+              <div style={{ width: 28, height: 28, borderRadius: 7, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: pal.shadow, padding: 3 }}>
+                <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              </div>
+              <div style={styles.brandName}>TK Envanter Tool</div>
             </div>
             <div style={styles.themeToggle} onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))} title="Temayı değiştir">
               <span style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>

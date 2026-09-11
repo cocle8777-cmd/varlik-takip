@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { LIGHT_PALETTE } from "../theme/palette";
 import { buildStyles } from "../theme/buildStyles";
 import { backendClient } from "../services/backendClient";
+import thyLogo from "../assets/thy-logo.svg";
 
 // Kurumsal Login ekranı — gereksinim #6: THY logosu, Domain Name, Username, Password, Giriş Yap.
-// Gerçek bir THY logo dosyası projede yok (bkz. konuşma) — marka görseli yeniden üretilmeden
-// sade, stilize bir "THY" rozeti kullanılıyor; gerçek logo eklenmek istenirse buradaki
-// <div style={styles.loginLogoMark}> bloğu bir <img> ile değiştirilebilir.
+// Gerçek logo eklendi (bkz. konuşma) — beyaz zeminli bir kart içinde gösteriliyor çünkü logonun
+// iç petal kısmı beyaz dolgulu (.cls-2); uygulamanın kendi (özellikle koyu) temasının zemini
+// üzerinde doğrudan durursa o kısımlar kaybolur/net görünmez.
 export default function LoginScreen({ onLoginSuccess }) {
   const pal = LIGHT_PALETTE;
   const styles = useMemo(() => buildStyles(pal), []);
@@ -48,23 +49,20 @@ export default function LoginScreen({ onLoginSuccess }) {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, marginBottom: 8 }}>
           <div
             style={{
-              width: 64,
-              height: 64,
+              width: 72,
+              height: 72,
               borderRadius: 16,
-              background: pal.accentGrad,
+              background: "#fff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 22,
-              letterSpacing: "0.02em",
               boxShadow: pal.shadow,
+              padding: 8,
             }}
           >
-            THY
+            <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </div>
-          <p style={{ ...styles.pageTitle, fontSize: 21, textAlign: "center" }}>Varlık Takip</p>
+          <p style={{ ...styles.pageTitle, fontSize: 21, textAlign: "center" }}>TK Envanter Tool</p>
           <p style={{ ...styles.pageSub, textAlign: "center" }}>Devam etmek için kurumsal bilgilerinizle giriş yapın</p>
         </div>
 
