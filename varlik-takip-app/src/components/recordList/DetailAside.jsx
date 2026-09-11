@@ -266,7 +266,10 @@ export default function DetailAside({ row, isZimmet, ownerLabel, serialLabel, mo
           pal={pal}
         />
 
-        <DeviceActionHistory row={row} mailHistory={mailHistory} styles={styles} pal={pal} />
+        {/* Cihaz Aksiyon Geçmişi geçici olarak askıya alındı — arkasındaki kurgu/veri senaryosu
+            henüz netleşmediği için anlaşılır değildi (bkz. konuşma). Component silinmedi,
+            tekrar açmak için bu satırı geri getir. */}
+        {false && <DeviceActionHistory row={row} mailHistory={mailHistory} styles={styles} pal={pal} />}
       </div>
 
       {isZimmet && row.owner !== "—" && (
