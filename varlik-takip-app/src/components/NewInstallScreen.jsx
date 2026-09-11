@@ -23,7 +23,12 @@ const FIELDS = [
 ];
 
 const today = () => new Date().toISOString().slice(0, 10);
-const emptyForm = (who) => Object.fromEntries(FIELDS.map((f) => [f.k, f.k === "date" ? today() : f.k === "processedBy" ? who || "" : ""]));
+const toUpperTr = (v) => String(v ?? "").toLocaleUpperCase("tr-TR");
+// Büyük harfe çevrilecek serbest metin alanları. Sabit seçenekli alanlara (DURUM/Bitlocker/NEDENİ)
+// dokunulmaz — kod bu değerlerle karşılaştırma yapıyor ("Teslim edildi" vb.), büyütülürse eşleşme
+// bozulur (bkz. konuşma).
+const UPPER_FIELDS = new Set(["serial", "hostname", "model", "location", "userInfo", "atoNo", "processedBy"]);
+const emptyForm = (who) => Object.fromEntries(FIELDS.map((f) => [f.k, f.k === "date" ? today() : f.k === "processedBy" ? toUpperTr(who || "") : ""]));
 
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -135,7 +140,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const setF = (k, v) => setForm((p) => ({ ...p, [k]: UPPER_FIELDS.has(k) ? toUpperTr(v) : v }));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -308,7 +313,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
     if (editingId) return;
     const th = thBySerial.get(norm(form.serial));
     if (!th) return;
-    const model = th.deviceType || th.model || th.asset || "";
+    const model = toUpperTr(th.deviceType || th.model || th.asset || "");
     setForm((p) => (p.model === model ? p : { ...p, model }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.serial, thBySerial, editingId]);

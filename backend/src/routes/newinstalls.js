@@ -45,10 +45,17 @@ function load() {
 function save(state) {
   writeSection(SECTION, state);
 }
+// Serbest metin alanları büyük harfle saklanır — Excel'e de bu şekilde yazılır (bkz. konuşma).
+// Sabit seçenekli alanlara (DURUM/Bitlocker Kontrol/NEDENI) dokunulmaz — frontend bu tam
+// değerlerle karşılaştırma yapıyor ("Teslim edildi" vb.), büyütülürse eşleşme bozulur. Frontend
+// zaten yazarken büyütüyor; burası — API'ye başka bir yoldan küçük harfle veri gelirse diye —
+// son bir güvence.
+const UPPER_FIELDS = new Set(["serial", "hostname", "model", "location", "userInfo", "atoNo", "processedBy"]);
 function clean(body = {}) {
   const out = {};
   COLUMNS.forEach(([k]) => {
-    out[k] = String(body[k] ?? "").trim().slice(0, 500);
+    const v = String(body[k] ?? "").trim().slice(0, 500);
+    out[k] = UPPER_FIELDS.has(k) ? v.toLocaleUpperCase("tr-TR") : v;
   });
   return out;
 }
