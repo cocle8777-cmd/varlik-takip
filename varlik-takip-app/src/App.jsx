@@ -2282,35 +2282,14 @@ IT Support`;
         {/* SIDEBAR */}
         <aside style={styles.sidebar} className="no-print">
           {/* Tema değiştirici + Ayarlar butonu buradan kaldırılıp sağ üste (ana panel başlığına)
-              taşındı (bkz. konuşma) — bu satır artık sadece logo + isim */}
-          <div style={{ ...styles.brand, justifyContent: "flex-start" }}>
-            <div style={styles.brandLeft}>
-              <div style={{ width: 56, height: 24, borderRadius: 6, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: pal.shadow, padding: 4 }}>
-                <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-              </div>
-              <div style={styles.brandName}>TK Envanter Tool</div>
+              taşındı (bkz. konuşma). Logo + isim artık kendi ayrı kartında — sidebar'ın geri
+              kalanından (nav listesi) görsel olarak ayrılsın diye (bkz. konuşma — referans görsel). */}
+          <div style={{ borderRadius: 12, background: pal.fieldBg, border: `1px solid ${pal.line}`, padding: "14px 12px 10px", marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <div style={{ width: "100%", height: 56, borderRadius: 8, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: pal.shadow, padding: 8 }}>
+              <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
             </div>
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.01em", color: pal.ink }}>TK Envanter Tool</div>
           </div>
-
-          {user && (
-            <div
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "8px 11px", marginBottom: 10, borderRadius: 8, background: pal.fieldBg, fontSize: 13,
-              }}
-            >
-              <span
-                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
-                title="Şifre değiştirmek için tıkla"
-                onClick={() => setChangePasswordOpen(true)}
-              >
-                {user.username}{user.role === "master" ? " · Master" : ""}
-              </span>
-              <span onClick={onLogout} title="Çıkış Yap" style={{ cursor: "pointer", color: pal.inkSoft, fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>
-                Çıkış
-              </span>
-            </div>
-          )}
 
           <div style={styles.deptList}>
             <div
@@ -2472,10 +2451,10 @@ IT Support`;
 
         {/* MAIN */}
         <div style={styles.main}>
-          {/* Tema değiştirici + Ayarlar — logo/marka satırından ayrılıp sağ üste taşındı
-              (bkz. konuşma). Her ekranda görünsün diye showDashboard/showSettings/vb.
+          {/* Tema değiştirici + Ayarlar + kullanıcı kartı — logo/marka satırından ayrılıp sağ
+              üste taşındı (bkz. konuşma). Her ekranda görünsün diye showDashboard/showSettings/vb.
               koşullarının ÜSTÜNDE, sabit olarak render ediliyor. */}
-          <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
             <div style={styles.themeToggle} onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))} title="Temayı değiştir">
               <span style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
               <span style={{ ...styles.themeToggleBtn, ...(theme === "dark" ? styles.themeToggleBtnActive : {}) }}>☾</span>
@@ -2487,6 +2466,33 @@ IT Support`;
             >
               ⚙ Ayarlar
             </button>
+            {user && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px 6px 6px", borderRadius: 10, background: pal.fieldBg }}>
+                <div
+                  style={{
+                    width: 32, height: 32, borderRadius: "50%", background: pal.accentGrad, color: "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13.5, flexShrink: 0,
+                  }}
+                >
+                  {(user.username || "?").slice(0, 1).toUpperCase()}
+                </div>
+                <div
+                  style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, cursor: "pointer", maxWidth: 140 }}
+                  title="Şifre değiştirmek için tıkla"
+                  onClick={() => setChangePasswordOpen(true)}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 700, color: pal.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.username}</span>
+                  <span style={{ fontSize: 11, color: pal.inkSoft }}>{user.role === "master" ? "Master" : "Kullanıcı"}</span>
+                </div>
+                <button
+                  onClick={onLogout}
+                  title="Çıkış Yap"
+                  style={{ border: "none", background: "transparent", cursor: "pointer", color: pal.inkSoft, fontSize: 17, lineHeight: 1, padding: "2px 2px 2px 6px", flexShrink: 0 }}
+                >
+                  ⏻
+                </button>
+              </div>
+            )}
           </div>
           {showDashboard ? (
             <>
