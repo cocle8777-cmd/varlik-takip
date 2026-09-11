@@ -86,6 +86,20 @@ function parseMailGroupsText(text) {
   return map;
 }
 
+// Aktif ekran (Dashboard / rapor / Gönderim Geçmişi / Ayarlar / Network görünümü) sayfa
+// yenilenince kaybolmasın diye localStorage'a yazılır (bkz. konuşma: "refresh yapınca anasayfaya
+// gidiyor, bütün sayfalar için düzelt"). Router eklemeden en basit/güvenli çözüm — mevcut
+// state-tabanlı navigasyon deseniyle tutarlı.
+const NAV_STORAGE_KEY = "varlikTakip.lastView";
+function loadNavState() {
+  try {
+    const raw = localStorage.getItem(NAV_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function App({ user, onLogout } = {}) {
   // "aero" — kullanıcının verdiği havacılık/glassmorphism mockup'ından türetilen, seçilebilir
   // üçüncü tema (bkz. konuşma — ışık/koyu'nun yerine değil, ek olarak). PALETTES ile 3'lü toggle
@@ -95,7 +109,7 @@ export default function App({ user, onLogout } = {}) {
   const pal = PALETTES[theme] || LIGHT_PALETTE;
   const styles = useMemo(() => buildStyles(pal), [theme]);
   const [activeDept, setActiveDept] = useState("d1");
-  const [activeReport, setActiveReport] = useState("inaktif");
+  const [activeReport, setActiveReport] = useState(() => loadNavState().activeReport || "inaktif");
   // Sol menüde Rapor Türü kategorileri (Genel Raporlar / LAKESIDE) ve Network menüsü
   // açılır/kapanır (gereksinim #1, #2) — varsayılan hepsi açık
   const [expandedReportCategories, setExpandedReportCategories] = useState(() => new Set(REPORT_CATEGORIES.map((c) => c.id)));
@@ -103,7 +117,7 @@ export default function App({ user, onLogout } = {}) {
   // Network raporları (Down Ofisler, Ofis Bant Genişliği) henüz veri kaynağı olmadığı için
   // (gereksinim #1, bkz. plan) activeReport ile aynı koda hiç girmiyor — ayrı bir state (F bloğu
   // deseni). Bu sayede REPORT_TYPES'a dayanan mevcut rapor kodu (export/mail/başlık) bozulmaz.
-  const [activeNetworkView, setActiveNetworkView] = useState(null);
+  const [activeNetworkView, setActiveNetworkView] = useState(() => loadNavState().activeNetworkView || null);
   const toggleReportCategory = (id) =>
     setExpandedReportCategories((prev) => {
       const next = new Set(prev);
@@ -114,7 +128,7 @@ export default function App({ user, onLogout } = {}) {
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState("all"); // all | matched | unmatched
   const [toast, setToast] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(() => loadNavState().showHistory || false);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showNotedOnly, setShowNotedOnly] = useState(false);
   const [rowMeta, setRowMeta] = useState({}); // key -> { status, note, snoozed }
@@ -128,7 +142,7 @@ export default function App({ user, onLogout } = {}) {
   const togglePersonExpand = (rowKey, person) => {
     setExpandedPerson((prev) => (prev && prev.rowKey === rowKey && prev.person === person ? null : { rowKey, person }));
   };
-  const [showDashboard, setShowDashboard] = useState(true); // IT Ops Dashboard artık ana sayfa
+  const [showDashboard, setShowDashboard] = useState(() => loadNavState().showDashboard ?? true); // IT Ops Dashboard artık ana sayfa
   const [dashboardCompanyFilter, setDashboardCompanyFilter] = useState("all");
   const [dashboardDiskFilter, setDashboardDiskFilter] = useState("critical"); // critical | warning | normal
   // Faz 2 — Yönetim KPI paneli (dönemsel çözüm istatistikleri, madde 2/13)
@@ -137,10 +151,21 @@ export default function App({ user, onLogout } = {}) {
   const [mgmtPeriod, setMgmtPeriod] = useState("month"); // month | week | raw
   const [overviewPeriod, setOverviewPeriod] = useState("month"); // "Genel Durum" paneli dönemi
   const [mgmtLbsFilter, setMgmtLbsFilter] = useState([]); // üst lokasyon çoklu seçim
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(() => loadNavState().showSettings || false);
   const [settingsUnlocked, setSettingsUnlocked] = useState(false);
   // Ayarlar alt sekmeleri (kullanıcı isteği): Lokasyon Mailleri / SMTP / Veri Input
   const [settingsTab, setSettingsTab] = useState("lokasyon"); // lokasyon | smtp | veri
+
+  // Aktif ekranı localStorage'a yaz — sayfa yenilenince aynı ekranda kalınsın (bkz. konuşma).
+  // settingsUnlocked KASITLI olarak dahil değil: Ayarlar'a dönülse bile admin girişi (Ayarlar —
+  // Giriş) tekrar istenir, güvenlik atlanmaz.
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify({ showDashboard, showHistory, showSettings, activeNetworkView, activeReport }));
+    } catch {
+      // localStorage kullanılamıyorsa (gizli sekme, kota dolu vb.) sessizce geç — madde 14
+    }
+  }, [showDashboard, showHistory, showSettings, activeNetworkView, activeReport]);
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
