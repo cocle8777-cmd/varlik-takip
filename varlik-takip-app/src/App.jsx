@@ -2891,7 +2891,14 @@ IT Support`;
               })()}
             </>
           ) : showSettings ? (
-            !settingsUnlocked ? (
+            // Supervisor (master) olmayan kullanıcılar Ayarlar — Giriş mini formunu hiç görmesin,
+            // doğrudan yetkisiz mesajı gösterilsin (bkz. konuşma — test kullanıcısı isteği).
+            user && user.role !== "master" ? (
+              <div style={{ ...styles.panel, padding: "28px 24px", maxWidth: 360, margin: "40px auto", textAlign: "center" }}>
+                <p style={styles.pageTitle}>Yetkiniz Bulunmamaktadır</p>
+                <p style={styles.pageSub}>Bu bölüme erişim için Supervisor yetkisi gereklidir.</p>
+              </div>
+            ) : !settingsUnlocked ? (
               <div style={{ ...styles.panel, padding: "28px 24px", maxWidth: 360, margin: "40px auto" }}>
                 <p style={styles.pageTitle}>Ayarlar — Giriş</p>
                 <p style={styles.pageSub}>Bu bölüm sadece yetkili kullanıcılar içindir.</p>
