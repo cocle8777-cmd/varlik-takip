@@ -73,3 +73,42 @@ export const DARK_PALETTE = {
   warnFg: "#F0AC4E",
   warnBg: "rgba(240,172,78,0.16)",
 };
+
+// "Aero" teması — kullanıcının verdiği havacılık/glassmorphism mockup'ından türetildi (bkz.
+// konuşma). Işık/koyu temanın YERİNE değil, EKLENTİ olarak: seçilebilir üçüncü bir tema.
+// panel token'ı (panelSolid'den farklı olarak) burada BİLEREK yarı saydam (rgba) — sidebar/panel
+// stillerinde zaten uygulanan backdropFilter:blur(18px) ancak zemin saydamsa görünür olur; ışık/
+// koyu temada "sönük" görünmesin diye panel bilerek tam opaktı (bkz. yukarıdaki yorum), aero'da
+// tam tersine gerçek buzlu cam efekti hedefleniyor. Vurgu rengi mockup'taki gibi mavi (#0EA5E9) —
+// THY'nin turuncu/kırmızı marka rengiyle bilerek farklı, kullanıcı görüp karar verecek.
+export const AERO_PALETTE = {
+  bg: "#1E1F22",
+  bgGradient: "linear-gradient(135deg, #3A3C41 0%, #1E1F22 70%)",
+  panel: "rgba(255,255,255,0.04)",
+  panelSolid: "#2A2C30",
+  line: "rgba(255,255,255,0.08)",
+  ink: "#E2E8F0",
+  inkSoft: "#94A3B8",
+  accent: "#0EA5E9",
+  accentGrad: "linear-gradient(135deg, #0EA5E9, #0284C7)",
+  accentSoft: "rgba(14,165,233,0.16)",
+  accentSoftStrong: "rgba(14,165,233,0.12)",
+  ok: "#10B981",
+  okBg: "rgba(16,185,129,0.16)",
+  bad: "#FCA5A5",
+  badBg: "rgba(239,68,68,0.20)",
+  neutralFg: "#94A3B8",
+  neutralBg: "rgba(255,255,255,0.06)",
+  neutralDot: "#475569",
+  fieldBg: "rgba(255,255,255,0.06)",
+  white: "#2A2C30",
+  overlay: "rgba(10,10,12,0.65)",
+  toastBg: "#E2E8F0",
+  toastFg: "#1E1F22",
+  shadow: "0 1px 2px rgba(0,0,0,0.3), 0 10px 40px rgba(0,0,0,0.4)",
+  modalShadow: "0 24px 70px rgba(0,0,0,0.6)",
+  fieldBorder: "1px solid rgba(255,255,255,0.08)",
+  scrollbarThumb: "rgba(255,255,255,0.22)",
+  warnFg: "#FCD34D",
+  warnBg: "rgba(245,158,11,0.20)",
+};

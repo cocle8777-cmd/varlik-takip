@@ -28,7 +28,7 @@ import { buildUnusedDeviceMailHtml, unusedDeviceMailSubject } from "./services/u
 import DeviceOverviewCard from "./components/DeviceOverviewCard";
 import NewInstallScreen from "./components/NewInstallScreen";
 import AppFooter from "./components/AppFooter";
-import { LIGHT_PALETTE, DARK_PALETTE } from "./theme/palette";
+import { LIGHT_PALETTE, DARK_PALETTE, AERO_PALETTE } from "./theme/palette";
 import { buildStyles } from "./theme/buildStyles";
 import Donut from "./components/Donut";
 import { backendClient, setSettingsAuth, clearSettingsAuth } from "./services/backendClient";
@@ -87,8 +87,12 @@ function parseMailGroupsText(text) {
 }
 
 export default function App({ user, onLogout } = {}) {
+  // "aero" — kullanıcının verdiği havacılık/glassmorphism mockup'ından türetilen, seçilebilir
+  // üçüncü tema (bkz. konuşma — ışık/koyu'nun yerine değil, ek olarak). PALETTES ile 3'lü toggle
+  // (☀︎/☾/✈) arasında döngü kurulabiliyor.
   const [theme, setTheme] = useState("light");
-  const pal = theme === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
+  const PALETTES = { light: LIGHT_PALETTE, dark: DARK_PALETTE, aero: AERO_PALETTE };
+  const pal = PALETTES[theme] || LIGHT_PALETTE;
   const styles = useMemo(() => buildStyles(pal), [theme]);
   const [activeDept, setActiveDept] = useState("d1");
   const [activeReport, setActiveReport] = useState("inaktif");
@@ -2267,7 +2271,7 @@ IT Support`;
       <style>{`
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 9px; }
-        ::-webkit-scrollbar-thumb { background: ${theme === "dark" ? DARK_PALETTE.scrollbarThumb : LIGHT_PALETTE.scrollbarThumb}; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: ${pal.scrollbarThumb}; border-radius: 10px; }
         input:focus, select:focus { outline: none; }
         @media print {
           .no-print { display: none !important; }
@@ -2463,9 +2467,12 @@ IT Support`;
               display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap",
             }}
           >
-            <div style={styles.themeToggle} onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))} title="Temayı değiştir">
-              <span style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
-              <span style={{ ...styles.themeToggleBtn, ...(theme === "dark" ? styles.themeToggleBtnActive : {}) }}>☾</span>
+            <div style={styles.themeToggle} title="Temayı değiştir">
+              <span onClick={() => setTheme("light")} style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
+              <span onClick={() => setTheme("dark")} style={{ ...styles.themeToggleBtn, ...(theme === "dark" ? styles.themeToggleBtnActive : {}) }}>☾</span>
+              {/* "Aero" — havacılık/glassmorphism deneme teması (bkz. konuşma), ışık/koyunun yanına
+                  seçilebilir üçüncü seçenek olarak eklendi. */}
+              <span onClick={() => setTheme("aero")} title="Aero (deneme)" style={{ ...styles.themeToggleBtn, ...(theme === "aero" ? styles.themeToggleBtnActive : {}) }}>✈</span>
             </div>
             <button
               style={{ ...styles.btnGhost, display: "flex", alignItems: "center", gap: 6, ...(showSettings ? styles.deptItemActive : {}) }}
