@@ -2635,6 +2635,28 @@ IT Support`;
 
                 return (
                   <>
+                    {/* Madde 10, 11 — "Cihaz Genel Görünüm": hostname/seri no/last logon ile
+                        arama, cihazın tüm kaynaklardaki durumu tek ekranda. Önce Kullanılmayan
+                        Cihazlar raporundaydı, sonra o raporun üstüne taşınmıştı; kullanıcı
+                        vazgeçip Ana Sayfa'nın EN ÜSTÜNE almak istedi — içinde zaten arama
+                        olduğu için Dashboard'un en başında, tüm ekranlarda erişilebilir olması
+                        daha kullanışlı (bkz. konuşma). */}
+                    <div style={{ marginBottom: 16 }}>
+                      <DeviceOverviewCard
+                        sources={{
+                          sccmRows: realSccmAll,
+                          thRows: realThAll,
+                          monitorRows: realMonitorAll,
+                          inaktifRows: inaktifComparisonRows.length ? inaktifComparisonRows : realInaktifAll,
+                          diskRows: realDiskAll,
+                          batteryRows: realBatteryAll,
+                          staleDays,
+                        }}
+                        styles={styles}
+                        pal={pal}
+                      />
+                    </div>
+
                     <div style={{ ...styles.panel, padding: "20px 24px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                         <div>
@@ -3828,29 +3850,6 @@ IT Support`;
                   )}
                 </div>
               </div>
-
-              {/* Madde 10, 11 — "Cihaz Genel Görünüm": hostname/seri no/last logon ile arama,
-                  cihazın tüm kaynaklardaki durumu OK/Kontrol/Kritik/Veri Yok rozetli kartlarda.
-                  Önceden Kullanılmayan Cihazlar raporunun EN ALTINDAYDI — kullanıcı isteğiyle
-                  başlık/istatistik şeridinin hemen altına, liste/filtrelerin ÜSTÜNE taşındı
-                  (bkz. konuşma) — arama aracı olduğu için önce görünmesi daha kullanışlı. */}
-              {isUnused && (
-                <div style={{ marginBottom: 16 }}>
-                  <DeviceOverviewCard
-                    sources={{
-                      sccmRows: realSccmAll,
-                      thRows: realThAll,
-                      monitorRows: realMonitorAll,
-                      inaktifRows: inaktifComparisonRows.length ? inaktifComparisonRows : realInaktifAll,
-                      diskRows: realDiskAll,
-                      batteryRows: realBatteryAll,
-                      staleDays,
-                    }}
-                    styles={styles}
-                    pal={pal}
-                  />
-                </div>
-              )}
 
               <div style={detailRow ? styles.detailLayoutRow : undefined}>
               <div style={styles.panel} className="print-area">
