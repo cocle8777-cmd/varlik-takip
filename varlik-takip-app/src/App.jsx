@@ -2281,16 +2281,14 @@ IT Support`;
       <div style={styles.shell} className="vt-shell">
         {/* SIDEBAR */}
         <aside style={styles.sidebar} className="no-print">
-          <div style={styles.brand}>
+          {/* Tema değiştirici + Ayarlar butonu buradan kaldırılıp sağ üste (ana panel başlığına)
+              taşındı (bkz. konuşma) — bu satır artık sadece logo + isim */}
+          <div style={{ ...styles.brand, justifyContent: "flex-start" }}>
             <div style={styles.brandLeft}>
               <div style={{ width: 56, height: 24, borderRadius: 6, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: pal.shadow, padding: 4 }}>
                 <img src={thyLogo} alt="Turkish Airlines" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               </div>
               <div style={styles.brandName}>TK Envanter Tool</div>
-            </div>
-            <div style={styles.themeToggle} onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))} title="Temayı değiştir">
-              <span style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
-              <span style={{ ...styles.themeToggleBtn, ...(theme === "dark" ? styles.themeToggleBtnActive : {}) }}>☾</span>
             </div>
           </div>
 
@@ -2478,6 +2476,22 @@ IT Support`;
 
         {/* MAIN */}
         <div style={styles.main}>
+          {/* Tema değiştirici + Ayarlar — logo/marka satırından ayrılıp sağ üste taşındı
+              (bkz. konuşma). Her ekranda görünsün diye showDashboard/showSettings/vb.
+              koşullarının ÜSTÜNDE, sabit olarak render ediliyor. */}
+          <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <div style={styles.themeToggle} onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))} title="Temayı değiştir">
+              <span style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
+              <span style={{ ...styles.themeToggleBtn, ...(theme === "dark" ? styles.themeToggleBtnActive : {}) }}>☾</span>
+            </div>
+            <button
+              style={{ ...styles.btnGhost, display: "flex", alignItems: "center", gap: 6, ...(showSettings ? styles.deptItemActive : {}) }}
+              onClick={() => { closeAllViews(); setShowSettings(true); }}
+              title="Ayarlar"
+            >
+              ⚙ Ayarlar
+            </button>
+          </div>
           {showDashboard ? (
             <>
               {(() => {
