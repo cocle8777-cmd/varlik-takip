@@ -13,7 +13,14 @@ export function buildStyles(p) {
     // "1fr" tek başına minmax(auto,1fr) demektir — geniş bir tablo geldiğinde sütun küçülmeyip
     // sayfayı ekran dışına taşırır, o yüzden minmax(0,1fr) kullanıyoruz (bkz. konuşma)
     shell: { width: "100%", display: "grid", gridTemplateColumns: "244px minmax(0, 1fr)", gap: 16 },
-    sidebar: { background: p.panel, backdropFilter: "blur(18px)", border: `1px solid ${p.line}`, borderRadius: 16, padding: "22px 16px", height: "fit-content", boxShadow: p.shadow },
+    // Sabit (sticky) sidebar — kullanıcı isteği: "sol menü sabit kalsın, sayfayı aşağı
+    // indirdiğimde inmesin". body padding'i (16px) ile aynı top değeri; kendi içeriği ekran
+    // boyundan uzun olursa (çok sayıda rapor linki) sidebar'ın kendisi kayar, sayfa değil.
+    sidebar: {
+      background: p.panel, backdropFilter: "blur(18px)", border: `1px solid ${p.line}`, borderRadius: 16,
+      padding: "22px 16px", height: "fit-content", boxShadow: p.shadow,
+      position: "sticky", top: 16, maxHeight: "calc(100vh - 32px)", overflowY: "auto",
+    },
     brand: { display: "flex", alignItems: "center", gap: 10, padding: "2px 8px 20px", justifyContent: "space-between" },
     brandLeft: { display: "flex", alignItems: "center", gap: 10 },
     brandMark: { width: 24, height: 24, borderRadius: 6, background: p.accentGrad, flexShrink: 0 },

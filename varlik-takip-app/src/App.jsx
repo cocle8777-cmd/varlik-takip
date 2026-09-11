@@ -2457,13 +2457,17 @@ IT Support`;
         <div style={{ ...styles.main, position: "relative" }}>
           {/* Tema değiştirici + Ayarlar + kullanıcı kartı — logo/marka satırından ayrılıp sağ
               üste taşındı (bkz. konuşma). Her ekranda görünsün diye showDashboard/showSettings/vb.
-              koşullarının ÜSTÜNDE, sabit olarak render ediliyor. Ayrı bir satır/boşluk yaratmasın
-              diye akıştan çıkarılıp ilk panelin başlık satırının üzerine mutlak konumlandırıldı —
-              böylece altındaki içerik yukarı kayar (bkz. konuşma). */}
+              koşullarının ÜSTÜNDE, sabit olarak render ediliyor. ÖNEMLİ: position:"fixed"
+              (absolute DEĞİL) — absolute iken sayfa scroll edildiğinde bar sayfayla birlikte
+              kayıp viewport dışına taşıyor, üstteki kesik/kırpık hâli altındaki içerikle
+              üst üste biniyordu ("kayma" / "mastGiriş Yap" gibi bitişik metin — bkz. konuşma,
+              Ayarlar ekranında ekran görüntüsüyle işaretlendi). fixed, sol menü artık sticky
+              olduğu için (aynı istek) tutarlı: sayfa kayarken ikisi de sabit kalır.
+              Viewport'a göre konumlandığından .main'in kendi scroll pozisyonundan etkilenmez. */}
           <div
             className="no-print"
             style={{
-              position: "absolute", top: 20, right: 24, zIndex: 5,
+              position: "fixed", top: 32, right: 40, zIndex: 20,
               display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap",
             }}
           >

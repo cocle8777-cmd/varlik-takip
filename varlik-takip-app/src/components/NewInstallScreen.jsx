@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { backendClient } from "../services/backendClient";
+import Pagination from "./Pagination";
+
+// Diğer raporlarla aynı sayfalama seçenekleri (kullanıcı isteği — bkz. konuşma: "Yeni kurulum
+// kaydındaki kayıtlara da sayfa düzeni koyalım").
+const PAGE_SIZE_OPTIONS = [25, 50, 100, Infinity];
 
 // "Yeni Kurulum Kaydı" (demo) — formdan kayıt → sistemde saklama → mevcut Excel'e satır ekleme
 // → mail hazırlama/gönderme. Bkz. konuşma: 2. adım A seçeneği (mevcut dosyaya ekleme), demoda
@@ -251,6 +256,22 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
       return String(b.id).localeCompare(String(a.id));
     });
   }, [records, qFilter, qText]);
+
+  // Sayfalama — diğer raporlarla aynı desen (Pagination bileşeni + 25/50/100/Tümü seçici).
+  // Seçim/mail hedefi hâlâ TÜM filtrelenmiş kayıtları kapsar (filteredRecords) — sayfalama
+  // sadece tabloda o an GÖRÜNENİ sınırlar, "Tümünü Seç"in anlamını değiştirmez.
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [qFilter, qText, pageSize]);
+  const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(filteredRecords.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pagedRecords = useMemo(() => {
+    if (pageSize === Infinity) return filteredRecords;
+    const start = (safePage - 1) * pageSize;
+    return filteredRecords.slice(start, start + pageSize);
+  }, [filteredRecords, pageSize, safePage]);
 
   const allChecked = filteredRecords.length > 0 && filteredRecords.every((r) => selected.has(r.id));
   const toggleAll = () =>
@@ -747,7 +768,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.map((r) => (
+                {pagedRecords.map((r) => (
                   <tr key={r.id} style={selected.has(r.id) ? styles.rowSelected : undefined}>
                     <td style={styles.td} onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} style={styles.checkbox} />
@@ -790,6 +811,25 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {filteredRecords.length > PAGE_SIZE_OPTIONS[0] && (
+          <div style={styles.segmented} title="Sayfada gösterilecek kayıt sayısı">
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <div key={n} onClick={() => setPageSize(n)} style={{ ...styles.seg, ...(pageSize === n ? styles.segActive : {}) }}>
+                {n === Infinity ? "Tümü" : n}
+              </div>
+            ))}
+          </div>
+        )}
+        {filteredRecords.length > 0 && (
+          <div style={{ ...styles.tableFooter, flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+            <span>
+              {filteredRecords.length} kayıttan {pagedRecords.length} tanesi gösteriliyor
+              {pageSize !== Infinity && totalPages > 1 ? ` · Sayfa ${safePage} / ${totalPages}` : ""}
+            </span>
+            <Pagination page={safePage} totalPages={totalPages} onChange={setPage} styles={styles} pal={pal} />
           </div>
         )}
       </div>
