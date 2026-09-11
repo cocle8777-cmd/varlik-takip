@@ -2474,26 +2474,13 @@ IT Support`;
         {/* MAIN */}
         <div style={styles.main}>
           {/* Tema değiştirici + Ayarlar + kullanıcı kartı — logo/marka satırından ayrılıp sağ
-              üste taşındı (bkz. konuşma). ÖNEMLİ: position:"sticky" (fixed/absolute DEĞİL).
-              fixed denendi ama sayfa kaydırıldığında çubuk ekranda hep aynı köşede kaldığı için
-              ALTINDAN GEÇEN farklı kartlar (ör. "Cihaz Sağlığı Durumu") onun üstüne biniyordu —
-              kullanıcı ekran görüntüsüyle bildirdi ("scroll yaptığımda hala üçü birlikte geliyor").
-              sticky, sol menüyle birebir aynı mantık: kendi satırını (normal akışta) korur, bu
-              yüzden altındaki hiçbir panelle asla çakışmaz; ama scroll edilince ekranın üstünde
-              asılı kalır (top:16, sidebar ile aynı ofset). */}
+              üste taşındı (bkz. konuşma). sticky/fixed/absolute hepsi denendi (bkz. git geçmişi)
+              — hepsinde scroll edildiğinde altından geçen kartlarla çakışma/şeffaflık sorunu
+              çıktı. Kullanıcı kararı: sabitlemekten TAMAMEN vazgeçildi — bu satır normal akışta,
+              sayfayla birlikte kayar. Sadece sol menü (sidebar) sabit (sticky) kalıyor. */}
           <div
             className="no-print"
-            style={{
-              position: "sticky", top: 16, zIndex: 20,
-              // .main flex column olduğu için (align-items varsayılanı "stretch") bu satır
-              // GENİŞLİĞİ boyunca tam eninde, görünmez bir kutu olarak yayılıyordu — sticky
-              // pinlenince bu görünmez ama z-index'i yüksek kutu, altından geçen geniş kartların
-              // (ör. stat kartları satırı) üzerine "şeffaf" biniyordu (bkz. konuşma — kullanıcı
-              // ekran görüntüsüyle gösterdi). alignSelf:"flex-end" ile kutu sadece kendi
-              // içeriği (butonlar) kadar yer kaplıyor, tam genişlik yayılmıyor.
-              alignSelf: "flex-end",
-              display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap",
-            }}
+            style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap" }}
           >
             <div className="vt-tip" data-tip="Temayı değiştir" style={styles.themeToggle}>
               <span onClick={() => setTheme("light")} style={{ ...styles.themeToggleBtn, ...(theme === "light" ? styles.themeToggleBtnActive : {}) }}>☀︎</span>
