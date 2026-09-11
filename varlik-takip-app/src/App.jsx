@@ -104,7 +104,22 @@ export default function App({ user, onLogout } = {}) {
   // "aero" — kullanıcının verdiği havacılık/glassmorphism mockup'ından türetilen, seçilebilir
   // üçüncü tema (bkz. konuşma — ışık/koyu'nun yerine değil, ek olarak). PALETTES ile 3'lü toggle
   // (☀︎/☾/✈) arasında döngü kurulabiliyor.
-  const [theme, setTheme] = useState("light");
+  // Tema seçimi de aktif ekran gibi localStorage'a yazılır — sayfa yenilenince "açık"a
+  // dönmesin (bkz. konuşma: "temayı da kalıcı yap").
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem("varlikTakip.theme") || "light";
+    } catch {
+      return "light";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("varlikTakip.theme", theme);
+    } catch {
+      // localStorage kullanılamıyorsa sessizce geç — madde 14
+    }
+  }, [theme]);
   const PALETTES = { light: LIGHT_PALETTE, dark: DARK_PALETTE, aero: AERO_PALETTE };
   const pal = PALETTES[theme] || LIGHT_PALETTE;
   const styles = useMemo(() => buildStyles(pal), [theme]);
