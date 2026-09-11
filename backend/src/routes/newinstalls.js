@@ -45,12 +45,11 @@ function load() {
 function save(state) {
   writeSection(SECTION, state);
 }
-// Serbest metin alanları büyük harfle saklanır — Excel'e de bu şekilde yazılır (bkz. konuşma).
-// Sabit seçenekli alanlara (DURUM/Bitlocker Kontrol/NEDENI) dokunulmaz — frontend bu tam
-// değerlerle karşılaştırma yapıyor ("Teslim edildi" vb.), büyütülürse eşleşme bozulur. Frontend
-// zaten yazarken büyütüyor; burası — API'ye başka bir yoldan küçük harfle veri gelirse diye —
-// son bir güvence.
-const UPPER_FIELDS = new Set(["serial", "hostname", "model", "location", "userInfo", "atoNo", "processedBy"]);
+// Büyük harfle saklanan alanlar — Excel'e de bu şekilde yazılır (bkz. konuşma). DURUM/Bitlocker
+// Kontrol/NEDENI da dahil — frontend'in sabit seçenekleri artık zaten büyük harfle tanımlı
+// ("TESLİM EDİLDİ" vb.), burası API'ye başka bir yoldan küçük harfle veri gelirse diye ikinci bir
+// güvence. TARİH/TESLİM TARİHİ (tarih) ve İADELER (elle yazılmayan, otomatik oluşan cümle) hariç.
+const UPPER_FIELDS = new Set(["serial", "hostname", "model", "location", "userInfo", "atoNo", "processedBy", "bitlocker", "status", "reason"]);
 function clean(body = {}) {
   const out = {};
   COLUMNS.forEach(([k]) => {

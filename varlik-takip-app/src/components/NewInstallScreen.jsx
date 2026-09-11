@@ -14,11 +14,12 @@ const FIELDS = [
   { k: "userInfo", label: "KULLANICI BİLGİSİ" },
   { k: "atoNo", label: "ATO NUMARASI" },
   { k: "date", label: "TARİH", type: "date" },
-  { k: "bitlocker", label: "Bitlocker Kontrol", options: ["Enable", "Süreç devam ediyor"] },
+  { k: "bitlocker", label: "Bitlocker Kontrol", options: ["ENABLE", "SÜREÇ DEVAM EDİYOR"] },
   { k: "processedBy", label: "İŞLEM YAPAN" },
-  { k: "status", label: "DURUM", options: ["Teslim edildi", "Hazırlandı"] },
+  { k: "status", label: "DURUM", options: ["TESLİM EDİLDİ", "HAZIRLANDI"] },
   { k: "deliveryDate", label: "TESLİM TARİHİ", type: "date" },
-  { k: "reason", label: "NEDENI", options: ["İADE", "DEĞİŞİM"] },
+  // "İADE" kaldırıldı, yerine "YENİ İŞE GİRİŞ" eklendi (bkz. konuşma) — Excel'de de bu görünür.
+  { k: "reason", label: "NEDENI", options: ["YENİ İŞE GİRİŞ", "DEĞİŞİM"] },
   { k: "returns", label: "İADELER", wide: true },
 ];
 
@@ -168,13 +169,13 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
     setForm(Object.fromEntries(FIELDS.map((f) => [f.k, r[f.k] || ""])));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  // Tek tıkla teslim: sadece teslim tarihini sor (varsayılan bugün), DURUM'u "Teslim edildi" yap
+  // Tek tıkla teslim: sadece teslim tarihini sor (varsayılan bugün), DURUM'u "TESLİM EDİLDİ" yap
   // ve arkasından otomatik olarak Excel'e işle ("Excel'e İşle" demeye gerek kalmadan).
   const deliver = async (r) => {
     const d = window.prompt(`"${r.hostname || r.serial}" teslim tarihi:`, r.deliveryDate || today());
     if (d === null) return;
     try {
-      await backendClient.updateNewInstall(r.id, { ...r, status: "Teslim edildi", deliveryDate: String(d).trim() });
+      await backendClient.updateNewInstall(r.id, { ...r, status: "TESLİM EDİLDİ", deliveryDate: String(d).trim() });
       let synced = false;
       try {
         const res = await backendClient.syncNewInstallExcel(excelPath || undefined);
@@ -213,7 +214,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
     const t = Date.parse(d);
     return Number.isNaN(t) ? 0 : Math.floor((Date.now() - t) / 86400000);
   };
-  const isUndelivered = (r) => norm(r.status) !== norm("Teslim edildi");
+  const isUndelivered = (r) => norm(r.status) !== norm("TESLİM EDİLDİ");
   const isWaitingLong = (r) => isUndelivered(r) && daysSince(r.date) > 7;
 
   const counts = useMemo(
@@ -771,7 +772,7 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
                       )}
                     </td>
                     <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
-                      {r.status !== "Teslim edildi" && (
+                      {norm(r.status) !== norm("TESLİM EDİLDİ") && (
                         <>
                           <button
                             style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12, color: pal.ok, borderColor: pal.ok }}
