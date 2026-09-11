@@ -66,8 +66,8 @@ export function pctChange(curr, prev) {
   return Math.round(((curr - prev) / prev) * 1000) / 10;
 }
 
-// "Cihaz Sağlık Şelalesi" segmentleri — finans waterfall'ın (Toplam Gelir → maliyetler → Net Kâr)
-// IT karşılığı: Toplam Cihaz → problem kategorileri → Temiz Cihaz.
+// "Cihaz Sağlığı Durumu" kartının segmentleri — finans waterfall'ın (Toplam Gelir → maliyetler →
+// Net Kâr) IT karşılığı: Toplam Cihaz → problem kategorileri → Temiz Cihaz.
 // NOT: kategoriler çakışabilir (bir cihaz hem inaktif hem kritik disk olabilir); bu yüzden
 // "Temiz" ayrıca verilen distinctProblem sayısından hesaplanır, ara çubuklar kategori büyüklüğüdür.
 export function waterfallSegments({ toplamCihaz = 0, inaktif = 0, zimmetHatali = 0, kritikDisk = 0, kullanilmayan = 0, temiz = null }) {

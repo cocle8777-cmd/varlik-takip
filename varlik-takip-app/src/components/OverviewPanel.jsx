@@ -85,8 +85,10 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
   const latestTrend = trendRows[trendRows.length - 1] || null;
   const prevTrend = trendRows[trendRows.length - 2] || null;
 
-  // "Cihaz Sağlık Şelalesi" — Toplam Cihaz'dan problem kategorileri çıkarılıp Temiz Cihaz'a
+  // "Cihaz Sağlığı Durumu" — Toplam Cihaz'dan problem kategorileri çıkarılıp Temiz Cihaz'a
   // ulaşılır. Grafik yerine: tek yığılı çubuk (kompozisyon) + çıkarma tablosu (anlaşılır).
+  // (Başlık "Şelale/waterfall" idi — kart gerçek bir waterfall grafiği çizmediği için kullanıcı
+  // isteğiyle değiştirildi, bkz. konuşma.)
   const healthRows = [
     { key: "Toplam Cihaz", value: live.toplamCihaz, sign: "", color: C.slate, bold: true },
     { key: "İnaktif Cihaz", value: live.inaktif, sign: "−", color: C.coral },
@@ -248,7 +250,7 @@ export default function OverviewPanel({ snapshots, period, setPeriod, live, styl
         </Card>
 
         {/* ---- Satır 2: Cihaz Sağlık Şelalesi (yığılı çubuk + çıkarma tablosu) ---- */}
-        <Card title="Cihaz Sağlık Şelalesi" accent={C.slate} span={7}>
+        <Card title="Cihaz Sağlığı Durumu" accent={C.slate} span={7}>
           <p style={{ ...styles.pageSub, margin: "0 0 12px", fontSize: 11.5 }}>
             Toplam cihazdan problem kategorileri çıkarılınca kalan "temiz" cihaz (bir cihaz birden çok kategoride olabilir)
           </p>
