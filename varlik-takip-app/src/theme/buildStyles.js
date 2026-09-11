@@ -59,8 +59,13 @@ export function buildStyles(p) {
     seg: { padding: "7px 15px", fontSize: 13.5, borderRadius: 6, color: p.inkSoft, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 },
     segActive: { background: p.panelSolid, boxShadow: p.shadow, fontWeight: 600, color: p.ink },
     chipToggle: { fontSize: 13, color: p.inkSoft, background: p.fieldBg, padding: "8px 13px", borderRadius: 8, cursor: "pointer" },
-    btnGhost: { border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", background: p.fieldBg, color: p.ink },
-    btnPrimary: { border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", background: p.accent, color: "#fff" },
+    // display: "inline-flex" (flex DEĞİL) — "flex" blok seviyeli kutu ürettiği için birden fazla
+    // buton yan yana (ör. bir tablo satırının Aksiyon hücresinde) konduğunda her biri kendi
+    // satırına düşüp dikey istifleniyordu; bu da satır yüksekliğini anormal şişiriyordu (bkz.
+    // konuşma — "Kayıtlar kısmında çok fazla boşluk var"). inline-flex, buton içindeki ikon+metin
+    // hizalamasını korurken butonun kendisini satır içi (yan yana dizilebilir) yapıyor.
+    btnGhost: { border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "inherit", background: p.fieldBg, color: p.ink },
+    btnPrimary: { border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "inherit", background: p.accent, color: "#fff" },
     table: { width: "100%", borderCollapse: "collapse" },
     th: { textAlign: "left", fontSize: 14.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.03em", color: p.ink, padding: "13px 24px", borderBottom: `2px solid ${p.line}`, whiteSpace: "nowrap" },
     td: { padding: "14px 24px", borderBottom: `1px solid ${p.line}`, fontSize: 14.5 },
