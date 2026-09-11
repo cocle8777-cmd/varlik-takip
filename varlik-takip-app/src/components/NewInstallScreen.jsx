@@ -690,12 +690,12 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
             type="text"
             value={mailTo}
             onChange={(e) => setMailTo(e.target.value)}
-            style={{ ...inp, flex: "1 1 300px" }}
+            style={{ ...inp, flex: "0 1 360px" }}
             placeholder="Mail alıcı(lar) — boşsa lokasyon mail grubu"
           />
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: pal.inkSoft }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: pal.inkSoft, flex: "0 0 auto" }}>
             Dil
-            <select value={mailLang} onChange={(e) => setMailLang(e.target.value)} style={{ ...inp, width: 90, flex: "0 0 auto" }}>
+            <select value={mailLang} onChange={(e) => setMailLang(e.target.value)} style={{ ...inp, width: 120, flex: "0 0 auto" }}>
               <option value="tr">Türkçe</option>
               <option value="en">English</option>
             </select>
