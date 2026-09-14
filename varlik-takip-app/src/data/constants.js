@@ -19,7 +19,6 @@ export const REPORT_CATEGORIES = [
       { id: "kullanilmayan", name: "Kullanılmayan Cihazlar" },
       { id: "kapatma-onayi", name: "Kapatma Onayı Bekleyen Kayıtlar" },
       { id: "yeni-kurulum", name: "Yeni Kurulum Kaydı" },
-      { id: "eimza", name: "E-İmza Bildirimi" },
       { id: "low-battery", name: "Low Battery" },
       { id: "checkpoint", name: "Checkpoint" },
       { id: "bitlocker", name: "BitLocker Kontrol" },

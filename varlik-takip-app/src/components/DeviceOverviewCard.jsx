@@ -28,7 +28,13 @@ export default function DeviceOverviewCard({ sources, styles, pal }) {
           type="text"
           placeholder="Hostname / Seri No / Last Logon..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQuery(v);
+            // Arama kutusu tamamen silinince eski sonuç ekranda asılı kalmasın — bkz. konuşma
+            // ("aradığımda X, bir şeyi sildiğimde sonuçta gitsin oradan").
+            if (!v.trim()) setSubmitted("");
+          }}
           onKeyDown={(e) => e.key === "Enter" && setSubmitted(query.trim())}
           style={{ ...styles.searchInput, border: `1px solid ${pal.line}`, borderRadius: 8, padding: "9px 12px", flex: 1, background: pal.fieldBg }}
         />
@@ -53,7 +59,11 @@ export default function DeviceOverviewCard({ sources, styles, pal }) {
             ))}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+          {/* Geniş ekranlarda auto-fill 6 kartı tek satıra sığdırıp etiketleri kırpıyordu
+              (bkz. konuşma — kullanıcı ekran görüntüsü: "Last Lo...", "SYN..." gibi kesik metinler).
+              minmax alt sınırı yükseltildi + grid genişliği sınırlandı, böylece geniş ekranda da
+              en fazla 3 sütun (3+3 satır) oluşuyor, dar ekranda ise otomatik azalıp alt alta diziliyor. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, maxWidth: 920 }}>
             {result.cards.map((card) => (
               <div key={card.group} style={{ border: `1px solid ${pal.line}`, borderRadius: 10, padding: "12px 14px" }}>
                 <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: pal.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>{card.group}</p>
@@ -65,7 +75,9 @@ export default function DeviceOverviewCard({ sources, styles, pal }) {
                         <span style={{ color: pal.inkSoft, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.label}</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                           <span style={{ fontWeight: 600 }}>{it.value}</span>
-                          <span style={{ background: st.bg, color: st.fg, borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 700 }} title={it.note || ""}>{st.label}</span>
+                          {/* it.badgeLabel varsa (örn. monitör zimmet karşılaştırması "Doğru"/"Hatalı") genel
+                              OK/Kritik yerine onu göster — bkz. konuşma */}
+                          <span style={{ background: st.bg, color: st.fg, borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 700 }} title={it.note || ""}>{it.badgeLabel || st.label}</span>
                         </span>
                       </div>
                     );

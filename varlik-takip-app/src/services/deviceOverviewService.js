@@ -2,7 +2,7 @@
 // ekranda birleştirir. Hostname / Seri No / Last Logon ile arama yapılır. Eksik alanlar "Veri Yok"
 // döner, uygulama hata vermez (madde 14). Aynı cihaz kaynaklar arasında seri no öncelikli
 // eşleştirilir (madde 14 — tekrar tekrar oluşmasın).
-import { norm } from "./comparisonService";
+import { norm, compareAssignment } from "./comparisonService";
 import { classifyDisk } from "./dashboardService";
 import { deviceAgeYears, daysSince } from "./unusedDeviceService";
 import { findBattery, batteryHealthState } from "./batteryFileService";
@@ -33,6 +33,24 @@ export function buildDeviceOverview(query, { sccmRows = [], thRows = [], monitor
   const cDrive = disksForHost.find((d) => /^c/i.test(String(d.serial || d._raw?.["Volume Name"] || ""))) || disksForHost[0] || null;
 
   const monitors = monitorRows.filter((m) => norm(m.hostname) === hostKey);
+
+  // Monitörün TuruncuHat'taki kendi zimmet kaydını seri no ile bul (comparisonService.js'deki
+  // buildMonitorDetails ile AYNI mantık — bkz. konuşma: "monitor zimmeti uyuşmuyor ama düzgün
+  // belirtilmemiş, sağ tarafta data eksik diye mi" sorusu üzerine eklendi). Önceden bu karşılaştırma
+  // HİÇ yapılmıyordu, her monitör satırı ne olursa olsun state:NONE ("Veri Yok") gösteriyordu —
+  // gerçek bir zimmet uyuşmazlığı olsa bile.
+  const monitorStatus = (m) => {
+    const reg = thRows.find((t) => t.deviceType === "MONITOR" && norm(t.serial) === norm(m.monitorSerial));
+    const monitorUser = m.username || "";
+    if (!reg) return { state: NONE, status: "TuruncuHat'ta Kaydı Yok (doğrulanamadı)" };
+    if (reg.assignmentType === "OBS") return { state: OK, badgeLabel: "Doğru", status: "Müdürlük Zimmeti (OBS)" };
+    const cmp = compareAssignment({ actualUsername: monitorUser, actualSicil: "", thUsername: reg.ownerUsername, thSicil: reg.ownerSicil });
+    if (!cmp.verifiable) return { state: NONE, status: "Bilgi Eksik (doğrulanamadı)" };
+    // Kullanıcı isteği — genel OK/Kritik rozeti yerine bu karta özel net etiket: bkz. konuşma
+    // ("Kritik yazmasın hatalı ise hatalı doğru ise doğru yazsın").
+    if (cmp.isMatch) return { state: OK, badgeLabel: "Doğru", status: "Doğru — Kendi Monitörünü Kullanıyor" };
+    return { state: CRIT, badgeLabel: "Hatalı", status: "Hatalı — Başkasının Monitörünü Kullanıyor" };
+  };
 
   if (!sccm && !th && !inaktif && disksForHost.length === 0) return { notFound: true, query };
 
@@ -110,7 +128,11 @@ export function buildDeviceOverview(query, { sccmRows = [], thRows = [], monitor
       {
         group: "Bağlı Monitörler",
         items: monitors.length
-          ? monitors.map((m) => ({ label: m.monitorSerial || "Monitör", value: `${m.monitorManufacturer || ""} ${m.monitorModel || ""}`.trim() || "—", state: NONE, note: m.username ? `Kullanan: ${m.username}` : "" }))
+          ? monitors.map((m) => {
+              const { state, badgeLabel, status } = monitorStatus(m);
+              const note = m.username ? `Kullanan: ${m.username} — ${status}` : status;
+              return { label: m.monitorSerial || "Monitör", value: `${m.monitorManufacturer || ""} ${m.monitorModel || ""}`.trim() || "—", state, badgeLabel, note };
+            })
           : [{ label: "Bağlı monitör", value: "Yok / Veri Yok", state: NONE }],
       },
     ],
