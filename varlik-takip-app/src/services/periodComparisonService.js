@@ -133,3 +133,41 @@ export function periodTrendSeries(periods, filterFn = () => true) {
   }
   return out;
 }
+
+// "Son N Gün" özeti (varsayılan 14 — bkz. konuşma: "Son 2 Haftalık Özet"). Tek bir kanonik
+// hesaplama: en güncel snapshot ile, N gün öncesine EN YAKIN (o tarihten eski/eşit) snapshot
+// arasında comparePeriods çalıştırır. Bu, Dashboard'daki mini rapor-durumu özetleri İÇİN TEK
+// kaynak olsun diye buraya eklendi — başka hiçbir component kendi "son 2 hafta" hesabını
+// yapmamalı, hepsi bu fonksiyonu çağırmalı (gereksinim: "aynı veri farklı yerlerde farklı
+// hesaplanmasın"). raporun/rowMeta'nın "Çözüldü" durumuyla KARIŞTIRILMASIN — bu, cihazın
+// problemli listeden fiilen çıkıp çıkmadığını (snapshot karşılaştırması) ölçer, tıpkı
+// comparePeriods'ın geri kalanı gibi.
+//   bekleyen (devamEden) = N gün önce de sorunluydu, hâlâ sorunlu
+//   çözülen              = N gün önce sorunluydu, artık listede yok
+//   yeni gelen            = N gün önce yoktu, şimdi sorunlu listede
+export function rollingWindowSummary(snapshots, days = 14, filterFn = () => true) {
+  const sorted = [...(snapshots || [])]
+    .filter((s) => s && !Number.isNaN(new Date(s.capturedAt).getTime()))
+    .sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt));
+  if (sorted.length < 2) return null;
+
+  const curr = sorted[sorted.length - 1];
+  const cutoff = new Date(curr.capturedAt).getTime() - days * 86400000;
+  // Cutoff'tan eski/eşit olan en SON (en güncel) snapshot — yoksa en eski snapshot'a düş
+  // (madde 14 — az veri varken de hata vermesin, sadece pencere fiilen N günden kısa olur).
+  let prev = null;
+  for (const s of sorted) {
+    if (new Date(s.capturedAt).getTime() <= cutoff) prev = s;
+    else break;
+  }
+  if (!prev) prev = sorted[0];
+  if (prev === curr) return null; // tek nokta — karşılaştırılacak ikinci bir dönem yok
+
+  const { counts } = comparePeriods(prev, curr, filterFn);
+  return {
+    ...counts,
+    fromDate: prev.capturedAt,
+    toDate: curr.capturedAt,
+    actualDays: Math.round((new Date(curr.capturedAt) - new Date(prev.capturedAt)) / 86400000),
+  };
+}

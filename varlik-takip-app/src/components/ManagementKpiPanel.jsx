@@ -1,11 +1,17 @@
 import { useMemo, useEffect, useRef } from "react";
 import { Chart, BarController, LineController, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend } from "chart.js";
 import { comparePeriods, locationSolutionBreakdown, groupSnapshotsByPeriod, periodTrendSeries } from "../services/periodComparisonService";
+import { REPORT_TYPES } from "../data/constants";
 import MultiSelectFilter from "./MultiSelectFilter";
 
 Chart.register(BarController, LineController, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Tooltip, Legend);
 
-const REPORT_LABELS = { inaktif: "İnaktif Cihazlar", zimmet: "Zimmet Uyuşmazlığı", disk: "Disk Alanı", kullanilmayan: "Kullanılmayan Cihazlar" };
+// Rapor adları artık burada AYRICA hard-code edilmiyor (bkz. konuşma: "konu başlıkları hard-code
+// edilmemeli") — tek kaynak REPORT_TYPES (constants.js), sol menüdeki isimlerle aynı. Bir reportId
+// snapshot'ı olup REPORT_TYPES'ta yoksa (ör. ileride eklenen bir rapor) id'nin kendisi gösterilir,
+// uygulama hata vermez.
+const REPORT_LABEL_BY_ID = Object.fromEntries(REPORT_TYPES.map((r) => [r.id, r.name]));
+const reportLabel = (id) => REPORT_LABEL_BY_ID[id] || id;
 const PERIOD_LABELS = { month: "Aylık", week: "Haftalık", raw: "Her Yükleme" };
 
 // Yönetim odaklı çözüm/müdahale istatistikleri (madde 2, 13). Snapshot geçmişi < 2 ise
@@ -53,6 +59,23 @@ export default function ManagementKpiPanel({
   );
 
   const trend = useMemo(() => periodTrendSeries(periods, filterFn), [periods, filterFn]);
+
+  // Konu başlığına (rapor türüne) göre kırılım — bkz. konuşma: "her konu başlığı için ilgili
+  // çözüm performansı ayrı ayrı görülebilmeli". Üstteki "Rapor" seçicisi tek bir raporu detaylı
+  // gösterirken, bu tablo `snapshots` içinde geçmişi olan TÜM rapor türlerini (dinamik — hard-code
+  // yok, hangi rapor snapshot yazdıysa o çıkar) aynı `period`/`lbsFilter` ile yan yana özetler.
+  const topicBreakdown = useMemo(() => {
+    return Object.keys(snapshots || {})
+      .map((id) => {
+        const topicPeriods = groupSnapshotsByPeriod(snapshots[id] || [], period);
+        if (topicPeriods.length < 2) return { id, label: reportLabel(id), enough: false };
+        const prevT = topicPeriods[topicPeriods.length - 2];
+        const currT = topicPeriods[topicPeriods.length - 1];
+        const { counts } = comparePeriods(prevT.snapshot, currT.snapshot, filterFn);
+        return { id, label: reportLabel(id), enough: true, periodLabel: currT.label, ...counts };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, "tr"));
+  }, [snapshots, period, filterFn]);
 
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
@@ -104,7 +127,11 @@ export default function ManagementKpiPanel({
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <select style={styles.scheduleSelect} value={report} onChange={(e) => setReport(e.target.value)}>
-            {Object.entries(REPORT_LABELS).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
+            {/* Sadece snapshot geçmişi olan (yani gerçek veriyle çalışan) raporlar listelenir —
+                dinamik, elle eklenmiş sabit bir liste değil (bkz. konuşma). */}
+            {Object.keys(snapshots || {}).sort((a, b) => reportLabel(a).localeCompare(reportLabel(b), "tr")).map((id) => (
+              <option key={id} value={id}>{reportLabel(id)}</option>
+            ))}
           </select>
           <select style={styles.scheduleSelect} value={period} onChange={(e) => setPeriod(e.target.value)}>
             {Object.entries(PERIOD_LABELS).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
@@ -113,6 +140,58 @@ export default function ManagementKpiPanel({
             <MultiSelectFilter label="Üst Lokasyon" options={lbsOptions} selected={lbsFilter} onChange={setLbsFilter} styles={styles} pal={pal} />
           )}
         </div>
+      </div>
+
+      {/* Konu başlığına göre kırılım — panelin ana yeni bölümü (bkz. konuşma). Seçili tek raporun
+          "yeterli veri" durumundan bağımsız her zaman gösterilir; her rapor türü kendi hazır olma
+          durumunu ayrı ayrı taşır (aşağıda "veri bekleniyor" satırıyla). */}
+      <div style={{ marginTop: 16 }}>
+        <p style={{ ...styles.groupedBarDeptName, marginBottom: 8 }}>
+          Konu Başlığına Göre Çözüm Performansı — {PERIOD_LABELS[period] || period}
+        </p>
+        {topicBreakdown.length === 0 ? (
+          <p style={{ ...styles.pageSub, margin: 0 }}>Henüz hiçbir rapor için dönemsel veri kaydı yok.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Konu Başlığı</th>
+                  <th style={styles.th}>Toplam Tespit</th>
+                  <th style={styles.th}>Çözülen</th>
+                  <th style={styles.th}>Devam Eden</th>
+                  <th style={styles.th}>Yeni</th>
+                  <th style={styles.th}>Çözüm Oranı</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topicBreakdown.map((r) => (
+                  <tr key={r.id} style={r.id === report ? { background: pal.accentSoft || pal.fieldBg } : undefined}>
+                    <td style={{ ...styles.td, fontWeight: r.id === report ? 700 : 400, cursor: "pointer" }} onClick={() => setReport(r.id)} title="Bu raporun detayını yukarıda göster">
+                      {r.label}
+                    </td>
+                    {!r.enough ? (
+                      <td style={{ ...styles.td, color: pal.inkSoft }} colSpan={5}>Veri bekleniyor — en az 2 {PERIOD_LABELS[period]?.toLowerCase() || period} dönemi gerekli</td>
+                    ) : (
+                      <>
+                        <td style={styles.td}>{r.toplamTespit}</td>
+                        <td style={{ ...styles.td, color: pal.ok }}>{r.cozulen}</td>
+                        <td style={{ ...styles.td, color: pal.warnFg }}>{r.devamEden}</td>
+                        <td style={{ ...styles.td, color: pal.bad }}>{r.yeniTespit}</td>
+                        <td style={styles.td}>
+                          <span style={{ ...styles.badge, ...(r.cozumOrani >= 50 ? styles.badgeOk : styles.badgeBad) }}>
+                            <span style={{ ...styles.badgeDot, background: r.cozumOrani >= 50 ? pal.ok : pal.bad }} />
+                            %{r.cozumOrani}
+                          </span>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {!enough ? (

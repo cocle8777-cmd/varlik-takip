@@ -19,6 +19,7 @@ import { mapBsodRows, fetchBsodRowsFromFile } from "./services/bsodFileService";
 import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
+import { rollingWindowSummary } from "./services/periodComparisonService";
 import LocationTrendChart from "./components/LocationTrendChart";
 import OverviewPanel from "./components/OverviewPanel";
 import ManagementKpiPanel from "./components/ManagementKpiPanel";
@@ -2621,6 +2622,29 @@ IT Support`;
 
                 const goDashboardReport = (id) => { goReport(id); };
 
+                // "Son 2 Haftalık Özet" — Dashboard KPI kartlarının üstündeki boş alan için (bkz.
+                // konuşma, madde 3). TEK kaynak: periodComparisonService.rollingWindowSummary,
+                // reportSnapshots'ın KENDİSİNİ kullanır — bu, aynı reportSnapshots state'i zaten
+                // Çözüm/Müdahale İstatistikleri panelini ve ilgili sayfaların "problemli cihaz"
+                // sayılarını (postSnapshot'a giden aynı satırlar) beslediği için Dashboard ile
+                // sayfa üstü rakamlar arasında ayrı bir hesaplama yolu AÇILMAZ (madde 4/5 —
+                // senkronizasyon). Snapshot geçmişi 2 dönemden azsa null döner, kart o zaman
+                // sessizce mini özeti göstermez (madde 14 — hata vermez).
+                const last2wInaktif = rollingWindowSummary(reportSnapshots.inaktif, 14);
+                const last2wDisk = rollingWindowSummary(reportSnapshots.disk, 14);
+                const last2wZimmet = rollingWindowSummary(reportSnapshots.zimmet, 14);
+                const rollingMiniSummary = (s) =>
+                  !s ? null : (
+                    <div
+                      style={{ display: "flex", gap: 8, fontSize: 10.5, fontFamily: "monospace", color: pal.inkSoft, marginBottom: 2 }}
+                      title={`Son ${s.actualDays} gün — ${new Date(s.fromDate).toLocaleDateString("tr-TR")} → ${new Date(s.toDate).toLocaleDateString("tr-TR")}`}
+                    >
+                      <span style={{ color: pal.ok }}>çöz {s.cozulen}</span>
+                      <span style={{ color: pal.bad }}>yeni {s.yeniTespit}</span>
+                      <span style={{ color: pal.warnFg }}>bek {s.devamEden}</span>
+                    </div>
+                  );
+
                 const barList = (items, { color, emptyText = "Kayıt yok" }) => {
                   const max = items.reduce((m, it) => Math.max(m, it.count), 0) || 1;
                   if (items.length === 0) return <p style={{ ...styles.pageSub, margin: 0 }}>{emptyText}</p>;
@@ -2683,11 +2707,13 @@ IT Support`;
                     {/* KPI satırı */}
                     <div style={{ ...styles.panel, padding: "20px 24px", ...styles.kpiGrid, gridTemplateColumns: "repeat(3, 1fr)" }}>
                       <div style={{ ...styles.kpiCard, cursor: "pointer" }} onClick={() => goDashboardReport("inaktif")} title="İnaktif Cihazlar raporuna git">
+                        {rollingMiniSummary(last2wInaktif)}
                         <span style={styles.kpiValue}>{inaktifStats.total}</span>
                         <span style={styles.kpiLabel}>inaktif cihaz</span>
                         <span style={{ ...styles.kpiSub, color: pal.inkSoft }}>{inaktifCompanies.length} şirket</span>
                       </div>
                       <div style={{ ...styles.kpiCard, cursor: "pointer" }} onClick={() => goDashboardReport("disk")} title="Disk Alanı raporuna git">
+                        {rollingMiniSummary(last2wDisk)}
                         <span style={{ ...styles.kpiValue, color: diskStats.critical ? pal.bad : pal.ink }}>{diskStats.critical}</span>
                         <span style={styles.kpiLabel}>kritik disk (≤{DISK_THRESHOLDS_GB.criticalMax} GB)</span>
                         <span style={{ ...styles.kpiSub, color: pal.warnFg }}>{diskStats.warning} uyarı seviyesinde</span>
@@ -2697,6 +2723,7 @@ IT Support`;
                             kayıtlar buraya karışmaz, aksi halde TH bazlı tasarımda binlerce
                             "SCCM'de/Monitor'da bulunamadı" kaydı sanki gerçek sorunmuş gibi
                             görünürdü (bkz. konuşma). Doğrulanamayan sayısı alt satırda ayrı gösterilir. */}
+                        {rollingMiniSummary(last2wZimmet)}
                         <span style={{ ...styles.kpiValue, color: overallZimmet.bad ? pal.bad : pal.ink }}>{overallZimmet.bad}</span>
                         <span style={styles.kpiLabel}>zimmet uyuşmazlığı</span>
                         <span style={{ ...styles.kpiSub, color: pal.inkSoft }}>
