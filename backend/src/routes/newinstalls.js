@@ -109,6 +109,26 @@ router.post("/mark-mailed", (req, res) => {
   res.json({ ok: true, marked });
 });
 
+// Kapatma onayı hatırlatma maili gönderildi işaretle — "Kapatma Onayı Bekleyen Kayıtlar"
+// ekranındaki "✉️ Gönder" butonu başarılı gönderimden sonra çağırır (bkz. konuşma: "Teslim Et
+// yerine Gönder yapacağız" — inaktif cihazlardaki gibi hatırlatma maili). mark-mailed'daki
+// mailSentAt gibi clean() whitelisti dışında, doğrudan işlenir; her gönderimde sayaç artar.
+router.post("/mark-closure-reminder-sent", (req, res) => {
+  const state = load();
+  const ids = new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String));
+  const now = new Date().toISOString();
+  let marked = 0;
+  state.records = state.records.map((r) => {
+    if (ids.has(String(r.id))) {
+      marked++;
+      return { ...r, closureReminderSentAt: now, closureReminderCount: (r.closureReminderCount || 0) + 1 };
+    }
+    return r;
+  });
+  save(state);
+  res.json({ ok: true, marked });
+});
+
 // Excel yolu ayarı
 router.put("/config/excel-path", (req, res) => {
   const state = load();

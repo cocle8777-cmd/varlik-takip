@@ -27,6 +27,7 @@ import { computeUnusedDevices, DEFAULT_STALE_DAYS } from "./services/unusedDevic
 import { buildUnusedDeviceMailHtml, unusedDeviceMailSubject } from "./services/unusedDeviceMailService";
 import DeviceOverviewCard from "./components/DeviceOverviewCard";
 import NewInstallScreen from "./components/NewInstallScreen";
+import PendingClosureScreen from "./components/PendingClosureScreen";
 import AppFooter from "./components/AppFooter";
 import { LIGHT_PALETTE, DARK_PALETTE, AERO_PALETTE } from "./theme/palette";
 import { buildStyles } from "./theme/buildStyles";
@@ -2206,6 +2207,13 @@ IT Support`;
       loadRealSccmData({ silent: true });
       loadRealThData({ silent: true });
     }
+    // Kapatma Onayı Bekleyen Kayıtlar — hatırlatma mailindeki Barkod/Varlık Adı seri no üzerinden
+    // TuruncuHat'tan geliyor (bkz. konuşma: "Barkod ve Varlık Adı hep boş geliyor"). Bu ekrana
+    // doğrudan girilip Zimmet/Kullanılmayan/Yeni Kurulum hiç ziyaret edilmemişse realThAll boş
+    // kalıyor, TH bulunamıyor gibi görünüyordu — asıl sorun eşleştirme değil, veri hiç yüklenmemişti.
+    if (activeReport === "kapatma-onayi") {
+      loadRealThData({ silent: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReport, fileSourceConfig.folderPath]);
 
@@ -3673,6 +3681,8 @@ IT Support`;
               recordMailHistory={recordMailHistory}
               showToast={showToast}
             />
+          ) : activeReport === "kapatma-onayi" ? (
+            <PendingClosureScreen styles={styles} pal={pal} showToast={showToast} mailGroupsText={mailGroupsText} thRows={realThAll} />
           ) : activeNetworkView ? (
             <>
               <div style={{ ...styles.panel, padding: "20px 24px" }}>
