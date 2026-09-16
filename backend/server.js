@@ -29,15 +29,25 @@ function createApp() {
   // Ağ üzerinden erişim için sabit bir origin listesi yerine, port 5173'teki herhangi bir host'a
   // (localhost, 127.0.0.1, LAN IP'si) izin veriyoruz — bkz. konuşma: iç ağda güven kabul edildi,
   // kimlik doğrulama katmanı yok, bu yüzden yalnızca güvenilir bir iç ağda çalıştırılmalı.
+  // Tek servis deploy'unda (ör. Render — bkz. konuşma: "arkadaşıma canlı gösterme") frontend ve
+  // backend AYNI origin'den servis edilir; tarayıcılar "unsafe" metodlarda (POST/PUT/DELETE)
+  // same-origin isteklerde bile Origin header'ı gönderebiliyor, bu yüzden istekte bulunan HOST ile
+  // Origin aynıysa (gerçekten same-origin) da her zaman izin verilir — port farkı önemsizdir.
   const ALLOWED_ORIGIN_PATTERN = /^https?:\/\/[^/]+:5173$/;
-  app.use(
+  app.use((req, res, next) => {
     cors({
       origin(origin, callback) {
-        if (!origin || ALLOWED_ORIGIN_PATTERN.test(origin)) return callback(null, true);
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGIN_PATTERN.test(origin)) return callback(null, true);
+        try {
+          if (new URL(origin).host === req.headers.host) return callback(null, true);
+        } catch {
+          // origin ayrıştırılamadıysa reddedilmeye devam eder
+        }
         callback(new Error("CORS: izin verilmeyen origin"));
       },
-    })
-  );
+    })(req, res, next);
+  });
 
   app.get("/api/health", (req, res) => res.json({ ok: true }));
 
