@@ -1,7 +1,11 @@
 // Yerel backend servisiyle konuşan istemci (bkz. ../../../backend). "localhost" yerine sayfayı
 // servis eden host kullanılır — böylece başka bir bilgisayardan tarayıcı üzerinden erişildiğinde
 // (ağ modu) istek kendi bilgisayarına değil, sunucunun IP'sine gider.
-const BASE_URL = `http://${window.location.hostname}:5000/api`;
+// Tek servis deploy'unda (ör. Render — bkz. konuşma: "canlı gösterme" için bulut deploy)
+// frontend ve backend AYNI origin'den servis edilir; bu durumda VITE_API_BASE=/api build
+// zamanında enjekte edilir ve backend port 5000 varsayımı devre dışı kalır. Yerel geliştirmede
+// bu env değişkeni tanımlı olmadığından davranış hiç değişmez.
+const BASE_URL = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:5000/api`;
 const SESSION_TOKEN_KEY = "varlikTakip.sessionToken";
 
 // Ayarlar ekranı girişinden sonra bellekte tutulan kimlik bilgileri — /settings/ altındaki her

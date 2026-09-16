@@ -63,10 +63,20 @@ function readRows(filePath, sheetIndex = 0, headerRow = 0) {
 // değişince) otomatik olarak yeniden okunur.
 const reportCache = new Map(); // key: filePath -> { mtimeMs, fileName, rows, modifiedAt }
 
+// Kayıtlı klasör yolu bu ortamda (ör. bulut deploy — farklı işletim sistemi/disk düzeni)
+// bulunamazsa, repo ile birlikte taşınan demo veri klasörüne düşülür — bkz. konuşma:
+// "arkadaşıma canlı gösterme" için tek seferlik bulut deploy. Yerel/gerçek klasör hep
+// önceliklidir; bu sadece o klasör YOKSA devreye girer, mevcut davranışı bozmaz.
+const BUNDLED_DEMO_DATA_DIR = path.join(__dirname, "..", "demo-data", "current");
+
 // prefix ile eşleşen en güncel dosyayı bulup satırları JSON olarak döner
 function loadLatestReport(folderPath, prefix, { sheetIndex = 0, headerRow = 0 } = {}) {
   if (!folderPath || !fs.existsSync(folderPath)) {
-    throw new Error(`Klasör bulunamadı: ${folderPath}`);
+    if (fs.existsSync(BUNDLED_DEMO_DATA_DIR)) {
+      folderPath = BUNDLED_DEMO_DATA_DIR;
+    } else {
+      throw new Error(`Klasör bulunamadı: ${folderPath}`);
+    }
   }
   const fileName = findLatestFile(folderPath, prefix);
   if (!fileName) {

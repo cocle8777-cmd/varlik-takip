@@ -1,6 +1,8 @@
 require("dotenv").config({ quiet: true });
 const express = require("express");
 const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
 const datasourceRouter = require("./src/routes/datasource");
 const smtpRouter = require("./src/routes/smtp");
 const mailRouter = require("./src/routes/mail");
@@ -95,6 +97,15 @@ function createApp() {
   app.use("/api/snapshots", requireAuth, snapshotsRouter);
   // Yeni Kurulum Kaydı (form → sistem → Excel → mail)
   app.use("/api/newinstalls", requireAuth, newInstallsRouter);
+
+  // Tek servis olarak deploy edilirken (ör. Render — bkz. konuşma: "arkadaşıma canlı gösterme")
+  // frontend'in build çıktısı (varlik-takip-app/dist) aynı process'ten servis edilir; yerelde
+  // ayrı bir Vite dev server (5173) kullanıldığından bu klasör yoksa hiçbir şey değişmez.
+  const frontendDist = path.join(__dirname, "..", "varlik-takip-app", "dist");
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(frontendDist, "index.html")));
+  }
 
   app.use((req, res) => res.status(404).json({ error: "Bulunamadı" }));
 
