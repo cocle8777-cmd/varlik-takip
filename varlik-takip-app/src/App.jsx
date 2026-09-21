@@ -15,11 +15,13 @@ import { fetchDiskRowsFromFile, mapDiskRow } from "./services/diskFileService";
 import { fetchSccmRowsFromFile, mapSccmRow } from "./services/sccmFileService";
 import { mapThRows, fetchThRowsFromFile } from "./services/thFileService";
 import { mapMonitorRows, fetchMonitorRowsFromFile } from "./services/monitorFileService";
+import { fetchLokasyonMailRowsFromFile, resolveMailForLocationName } from "./services/lokasyonMailService";
+import { computeLocationIpRows, buildLocationIpMailHtml, locationIpMailSubject } from "./services/locationIpService";
 import { mapBsodRows, fetchBsodRowsFromFile } from "./services/bsodFileService";
 import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
-import { rollingWindowSummary } from "./services/periodComparisonService";
+import { latestPeriodSummary } from "./services/periodComparisonService";
 import LocationTrendChart from "./components/LocationTrendChart";
 import OverviewPanel from "./components/OverviewPanel";
 import ManagementKpiPanel from "./components/ManagementKpiPanel";
@@ -167,11 +169,61 @@ export default function App({ user, onLogout } = {}) {
   const [mgmtReport, setMgmtReport] = useState("inaktif"); // inaktif | zimmet | disk
   const [mgmtPeriod, setMgmtPeriod] = useState("month"); // month | week | raw
   const [overviewPeriod, setOverviewPeriod] = useState("month"); // "Genel Durum" paneli dönemi
+  // Rapor durumu mini özeti (Dashboard kartları + her rapor sayfasının üst kısmı) — bkz. konuşma:
+  // "haftalık/aylık filtrelenebilecek şekilde... bütün raporlarda gözükmeli". Tek bir paylaşılan
+  // state: nerede gösterilirse gösterilsin AYNI dönem seçimini kullanır (senkronizasyon).
+  const [summaryPeriod, setSummaryPeriod] = useState("week"); // week | month
+
+  // Üst seviyede tanımlı — hem Dashboard'un KPI kartları hem her rapor sayfasının üst kısmı
+  // (activeReport === X iken render edilen generic başlık bloğu) aynı fonksiyonları çağırır,
+  // ikisi de reportSnapshots + summaryPeriod state'ini paylaşır (bkz. konuşma: "bütün raporlarda
+  // gözükmeli" + "haftalık/aylık filtrelenebilecek").
+  const summaryFor = (reportId) => latestPeriodSummary(reportSnapshots[reportId], summaryPeriod);
+  const reportPageSummary = (reportId) => {
+    const s = summaryFor(reportId);
+    if (!s) return null;
+    return (
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+        <span style={{ ...styles.badge, ...styles.badgeOk }}>çözülen {s.cozulen}</span>
+        <span style={{ ...styles.badge, background: `${pal.bad}1e`, color: pal.bad }}>yeni {s.yeniTespit}</span>
+        <span style={{ ...styles.badge, ...styles.badgeNeutral }}>bekleyen {s.devamEden}</span>
+        <span style={{ fontSize: 11, color: pal.inkSoft }}>{s.prevLabel} → {s.periodLabel}</span>
+        {summaryPeriodToggle}
+      </div>
+    );
+  };
+  // Haftalık/Aylık seçici — her yerde aynı ortak state'i (summaryPeriod) değiştirir, tüm rapor
+  // sayfaları ve Dashboard AYNI dönemi gösterir (senkronizasyon).
+  const summaryPeriodToggle = (
+    <div style={{ display: "inline-flex", border: `1px solid ${pal.line}`, borderRadius: 8, overflow: "hidden" }}>
+      {[["week", "Haftalık"], ["month", "Aylık"]].map(([v, l]) => (
+        <span
+          key={v}
+          onClick={() => setSummaryPeriod(v)}
+          style={{
+            padding: "4px 10px",
+            fontSize: 11.5,
+            cursor: "pointer",
+            background: summaryPeriod === v ? pal.accentSoft || pal.line : "transparent",
+            color: summaryPeriod === v ? pal.accent || pal.ink : pal.inkSoft,
+            fontWeight: summaryPeriod === v ? 700 : 400,
+          }}
+        >
+          {l}
+        </span>
+      ))}
+    </div>
+  );
   const [mgmtLbsFilter, setMgmtLbsFilter] = useState([]); // üst lokasyon çoklu seçim
   const [showSettings, setShowSettings] = useState(() => loadNavState().showSettings || false);
   const [settingsUnlocked, setSettingsUnlocked] = useState(false);
   // Ayarlar alt sekmeleri (kullanıcı isteği): Lokasyon Mailleri / SMTP / Veri Input
   const [settingsTab, setSettingsTab] = useState("lokasyon"); // lokasyon | smtp | veri
+
+  useEffect(() => {
+    if (settingsTab === "veri" && !scheduleLoaded) loadAnomalySchedule();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsTab]);
 
   // Aktif ekranı localStorage'a yaz — sayfa yenilenince aynı ekranda kalınsın (bkz. konuşma).
   // settingsUnlocked KASITLI olarak dahil değil: Ayarlar'a dönülse bile admin girişi (Ayarlar —
@@ -195,7 +247,11 @@ export default function App({ user, onLogout } = {}) {
     d2: { inaktif: true, disk: true, zimmet: true },
     d3: { inaktif: true, disk: true, zimmet: true },
   });
-  const [scheduleConfig, setScheduleConfig] = useState({ enabled: false, cadence: "weekly", day: "Pazartesi", time: "09:00" });
+  const [scheduleConfig, setScheduleConfig] = useState({ enabled: false, cadence: "weekly", day: "Pazartesi", time: "09:00", recipients: "" });
+  const [scheduleLoaded, setScheduleLoaded] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [runningScanNow, setRunningScanNow] = useState(false);
+  const [scheduleStatus, setScheduleStatus] = useState(null); // { lastRunAt, knownCount }
   const [smtpConfig, setSmtpConfig] = useState({ host: "", port: "587", username: "", password: "", fromAddress: "", useTls: true });
   const [dataSourceConfig, setDataSourceConfig] = useState({ url: "", authMethod: "windows", apiKey: "", username: "", password: "", domain: "", workstation: "" });
   const [testingConnection, setTestingConnection] = useState(false);
@@ -241,6 +297,11 @@ export default function App({ user, onLogout } = {}) {
   const [realSccmAll, setRealSccmAll] = useState([]);
   const [realSccmMeta, setRealSccmMeta] = useState(null);
   const [loadingRealSccm, setLoadingRealSccm] = useState(false);
+  // Lokasyon Mail Listesi — tüm lokasyon maillerinin TEK kaynağı (bkz. konuşma) + Lokasyon
+  // Hostname/IP Uyuşmazlığı raporunun temel verisi.
+  const [realLokasyonMailAll, setRealLokasyonMailAll] = useState([]);
+  const [realLokasyonMailMeta, setRealLokasyonMailMeta] = useState(null);
+  const [loadingRealLokasyonMail, setLoadingRealLokasyonMail] = useState(false);
   // TuruncuHat/Monitor Raporu artık İnaktif/Disk/SCCM ile aynı şekilde backend'in senkron
   // klasöründen otomatik yükleniyor (bkz. konuşma: "diğerleri gibi görünmüyor" — önceden sadece
   // tarayıcıda manuel dosya seçimiyle geliyordu, sayfa yenilenince kayboluyordu).
@@ -455,6 +516,7 @@ export default function App({ user, onLogout } = {}) {
   }, [settingsUnlocked]);
 
   const isZimmet = activeReport === "zimmet";
+  const isLokasyonIp = activeReport === "lokasyon-ip";
   // Bir kişinin ismine tıklayınca satırın altına diğer kayıtlarının açılması Zimmet'te zaten
   // vardı; İnaktif Cihazlar'da da aynı kişiye ait başka inaktif cihazlar varsa aynı şekilde
   // görülebilsin diye açıldı (bkz. konuşma) — Disk Alanı'nda "owner" bir kişi değil hostname
@@ -463,7 +525,7 @@ export default function App({ user, onLogout } = {}) {
   // İnaktif Cihazlar ve Zimmet Uyuşmazlığı'nda SCCM ile karşılaştırma yapıldığı için, gerçek
   // Hostname bilgisini de ayrı bir sütunda göstermek istendi (bkz. konuşma) — Disk Alanı'nda
   // "owner" zaten hostname olduğundan burada tekrar göstermeye gerek yok.
-  const showHostname = isZimmet || activeReport === "inaktif" || activeReport === "kullanilmayan";
+  const showHostname = isZimmet || isLokasyonIp || activeReport === "inaktif" || activeReport === "kullanilmayan";
   // Madde 6 — Last Logon sütunu: SCCM türevli veri taşıyan raporlarda (zimmet, inaktif). Değer
   // yoksa "Veri Yok" gösterilir, hata olmaz.
   const showLastLogon = isZimmet || activeReport === "inaktif" || activeReport === "kullanilmayan";
@@ -555,10 +617,10 @@ export default function App({ user, onLogout } = {}) {
   // Disk Alanı'nda genel "Cihaz Sahibi/Seri No-Model/Lokasyon" sütunları yerine
   // Hostname / Volume Name / Size / Free Space gösterilir (bkz. konuşma)
   const isDiskReport = activeReport === "disk";
-  const ownerLabel = isDiskReport ? "Hostname" : isUnused ? "Zimmet Sahibi" : isBsod || isBattery ? "Cihaz" : "Cihaz Sahibi";
+  const ownerLabel = isDiskReport ? "Hostname" : isLokasyonIp ? "Beklenen Ofis" : isUnused ? "Zimmet Sahibi" : isBsod || isBattery ? "Cihaz" : "Cihaz Sahibi";
   const serialLabel = isDiskReport ? "Volume Name" : isUnused ? "Seri No / Durum" : isBsod ? "BSOD Kodu" : isBattery ? "Batarya Sağlığı" : "Seri No / Model";
   const modelLabel = isDiskReport ? "Free Space" : "Model";
-  const locationLabel = isDiskReport ? "Size" : isBattery ? "Pil Durumu" : "Lokasyon";
+  const locationLabel = isDiskReport ? "Size" : isLokasyonIp ? "Gerçek IP (172.x)" : isBattery ? "Pil Durumu" : "Lokasyon";
   // owner + serial birlikte: Disk Alanı'nda "serial" (Volume Name) tek başına eşsiz değil
   // (aynı "Windows" birimi yüzlerce cihazda tekrarlanıyor) — hostname eklenmeden aynı anahtar
   // birden fazla satıra düşüp bir tanesini seçince hepsini birden seçili gösteriyordu
@@ -612,8 +674,14 @@ export default function App({ user, onLogout } = {}) {
   const zimmetRows = useMemo(() => {
     if (realSccmAll.length === 0) return [];
     if (realThAll.length === 0) return getZimmetRows(realSccmAll);
-    return computeComparisonRows({ sccmRows: realSccmAll, thRows: realThAll, monitorRows: realMonitorAll });
-  }, [realSccmAll, realThAll, realMonitorAll]);
+    return computeComparisonRows({ sccmRows: realSccmAll, thRows: realThAll, monitorRows: realMonitorAll, staleDays });
+  }, [realSccmAll, realThAll, realMonitorAll, staleDays]);
+
+  // Lokasyon Hostname ve IP Uyuşmazlığı — bkz. locationIpService.js
+  const lokasyonIpRows = useMemo(
+    () => computeLocationIpRows({ sccmRows: realSccmAll, lokasyonRows: realLokasyonMailAll }),
+    [realSccmAll, realLokasyonMailAll]
+  );
 
   // rowKey -> { chainId, chainSize }, bkz. zimmetService.computeZimmetChains
   const zimmetChains = useMemo(() => (isZimmet ? computeZimmetChains(zimmetRows) : new Map()), [isZimmet, zimmetRows]);
@@ -623,6 +691,9 @@ export default function App({ user, onLogout } = {}) {
   const anyMonitorIssue = useMemo(() => isZimmet && zimmetRows.some((r) => r.monitorIssue), [isZimmet, zimmetRows]);
   // Madde 3 — "TH Kaydı YOK" segmenti sadece gerçekten bu tip satır varsa gösterilir.
   const anyNoThRecord = useMemo(() => isZimmet && zimmetRows.some((r) => r.statusTag === "TH Kaydı YOK"), [isZimmet, zimmetRows]);
+  // "Mükerrer Çift Zimmet" segmenti — aynı kişiye birden fazla notebook zimmetli görünen kayıtlar
+  // (bkz. konuşma: "Zimmet uyuşmazlığı altına kırılım yap, mükerrer çift zimmet ekle").
+  const anyDuplicateNotebook = useMemo(() => isZimmet && zimmetRows.some((r) => r.statusTag === "Mükerrer Çift Zimmet"), [isZimmet, zimmetRows]);
 
   // Genel Bakış'taki durum akışı (Yeni/İnceleniyor/Çözüldü) dağılımı
   const statusFlowStats = useMemo(() => {
@@ -681,6 +752,8 @@ export default function App({ user, onLogout } = {}) {
 
   const rawRows = isZimmet
     ? zimmetRows
+    : isLokasyonIp
+    ? lokasyonIpRows
     : isBsod
     ? bsodRows
     : isBattery
@@ -745,6 +818,7 @@ export default function App({ user, onLogout } = {}) {
       if (segment === "unmatched" && (r.matched || (isZimmet && isZimmetUnverified(r.statusTag)))) return false;
       if (segment === "monitorIssue" && !r.monitorIssue) return false;
       if (segment === "noThRecord" && r.statusTag !== "TH Kaydı YOK") return false;
+      if (segment === "duplicateNotebook" && r.statusTag !== "Mükerrer Çift Zimmet") return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         const haystack = `${r.owner} ${r.sub} ${r.serial} ${r.model} ${r.location} ${locationOf(r)}`.toLowerCase();
@@ -1431,7 +1505,8 @@ IT Support`;
   // Alıcı: lokasyon mail grubu (bu cihazlar müdürlük/OBS zimmetinde, lokasyon sorumlusuna gider).
   const handleUnusedMail = async () => {
     const targetRows = resolveTargetRows();
-    const mailGroups = parseMailGroupsText(mailGroupsText);
+    // Bütün lokasyon mailleri TEK kaynaktan — Lokasyon Mail Listesi (bkz. konuşma: İnaktif
+    // Cihazlar'a ek olarak Kullanılmayan Cihazlar da buraya bağlandı).
     const byLocation = new Map();
     targetRows.forEach((r) => {
       const loc = r.location || "—";
@@ -1442,11 +1517,11 @@ IT Support`;
     let sent = 0, failed = 0, skipped = 0;
     const details = [];
     for (const [loc, rows] of byLocation) {
-      const to = mailGroups[loc];
+      const to = resolveMailForLocationName(realLokasyonMailAll, loc);
       const subject = unusedDeviceMailSubject(rows);
       if (!to) {
         skipped += rows.length;
-        details.push({ location: loc, to: null, count: rows.length, ok: false, message: "Mail grubu tanımlı değil" });
+        details.push({ location: loc, to: null, count: rows.length, ok: false, message: "Lokasyon Mail Listesi'nde bu lokasyon için mail adresi bulunamadı" });
         continue;
       }
       const lines = rows.map((r) => `- ${r.hostname || r.serial} — ${r.deviceModel || ""} (${r.deviceAge != null ? r.deviceAge + " yıl" : "yaş bilinmiyor"})`).join("\n");
@@ -1494,22 +1569,87 @@ IT Support`;
     }
   };
 
+  // Lokasyon Hostname ve IP Uyuşmazlığı — kişiye özel mail (lokasyon grubu değil), çünkü mesaj
+  // doğrudan cihazı kullanan kişiye "computer name'ini BT ile güncelle" diyor (bkz. konuşma —
+  // kullanıcının verdiği tam mail metni). Sadece uyuşmazlık (matched:false) satırlarına gider,
+  // "Doğru Ofiste Kullanılıyor" satırları için gönderilecek bir şey yok.
+  const handleLocationIpMail = async () => {
+    const targetRows = resolveTargetRows().filter((r) => !r.matched);
+    if (targetRows.length === 0) {
+      showToast("Seçili kayıtlarda gönderilecek uyuşmazlık yok — hepsi doğru ofiste kullanılıyor");
+      return;
+    }
+
+    let sent = 0, failed = 0, skipped = 0;
+    const details = [];
+    for (const r of targetRows) {
+      const to = r.mail;
+      if (!to) {
+        skipped += 1;
+        details.push({ location: r.hostname, to: null, count: 1, ok: false, message: "SCCM'de bu cihaz için kullanıcı maili bulunamadı" });
+        continue;
+      }
+      try {
+        const result = await backendClient.sendMail({
+          to,
+          subject: locationIpMailSubject(),
+          text: `Cihazınıza ait personel lokasyonu "${r.owner}" olarak görünmektedir, ancak cihazınız farklı bir bölge/yurt dışı IP bloğundan bağlanıyor. Computer name (${r.hostname}) bilgisinin BT ekibiyle güncellenmesi gerekiyor.`,
+          html: buildLocationIpMailHtml(r),
+        });
+        if (result.ok) {
+          sent += 1;
+          details.push({ location: r.hostname, to, count: 1, ok: true, message: "Gönderildi" });
+          logDeviceAction(r, { type: "Mail", description: `Lokasyon/IP uyuşmazlığı maili gönderildi (${r.hostname})`, mailSubject: locationIpMailSubject(), user: user?.username || "", reportId: activeReport, status: "Başarılı" });
+        } else {
+          failed += 1;
+          details.push({ location: r.hostname, to, count: 1, ok: false, message: result.message || "Gönderilemedi" });
+        }
+      } catch (err) {
+        failed += 1;
+        details.push({ location: r.hostname, to, count: 1, ok: false, message: err.message || "Gönderilemedi" });
+      }
+    }
+
+    recordMailHistory({
+      id: Date.now(),
+      date: new Date().toLocaleString("tr-TR"),
+      dept: currentDeptLabel,
+      report: "Lokasyon Hostname ve IP Uyuşmazlığı",
+      recipients: sent,
+      status: failed > 0 ? "Kısmen Başarısız" : sent > 0 ? "Başarılı" : "Gönderilemedi",
+      details,
+    });
+
+    if (sent === 0 && failed === 0 && skipped > 0) {
+      showToast(`❌ Gönderilemedi — ${skipped} cihaz için SCCM'de kullanıcı maili yok`);
+    } else if (skipped > 0) {
+      showToast(`⚠️ ${sent} mail gönderildi, ${skipped} cihaz için mail adresi yok${failed > 0 ? `, ${failed} başarısız` : ""}`);
+    } else if (failed > 0 && sent === 0) {
+      showToast(`❌ Gönderilemedi — ${failed} mail başarısız`);
+    } else if (failed > 0) {
+      showToast(`⚠️ ${sent} mail gönderildi, ${failed} başarısız`);
+    } else {
+      showToast(`✅ Başarılı — ${sent} kişiye lokasyon/IP uyuşmazlığı maili gönderildi`);
+    }
+  };
+
   // LAKESIDE (BSOD + Battery Health) ortak gönderim: her satırın hostname'i SCCM ile eşleştirilip
-  // EnvanterLokasyon bulunur, Lokasyon Mail Grupları'ndaki adrese lokasyon lokasyon ayrı mail gider
-  // (İnaktif Cihazlar deseni). SCCM'de bulunamayan veya lokasyonun mail grubu tanımsız olan kayıtlar
-  // için, rapor ekranındaki "Mail alıcı(lar)" kutusuna adres girildiyse tek bir yedek mail; o da
-  // boşsa bu kayıtlar "atlandı" olarak Gönderim Geçmişi'ne yazılır.
+  // gerçek kullanıcının maili (SCCM LastLogonMail) bulunur, mail KİŞİYE gider — lokasyon mail
+  // grubuna değil (bkz. konuşma: "onların excelinde kullanıcıların email adresi olacak, onlara o
+  // şekilde direkt mail atılabilir"). Aynı kişinin birden fazla olayı varsa (ör. birden fazla BSOD
+  // kaydı) tek mailde birleşir. SCCM'de eşleşmeyen veya maili olmayan kayıtlar için, rapor
+  // ekranındaki "Mail alıcı(lar)" kutusuna adres girildiyse tek bir yedek mail; o da boşsa bu
+  // kayıtlar "atlandı" olarak Gönderim Geçmişi'ne yazılır.
   const sendLakesideMailByLocation = async ({ targetRows, buildHtml, subjectFn, reportLabel, reportId, actionDesc, textFn }) => {
-    const mailGroups = parseMailGroupsText(mailGroupsText);
     const fallback = bsodMailTo.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
 
-    const byLoc = new Map();
+    const byLoc = new Map(); // mail -> rows[]
     const noRoute = [];
     targetRows.forEach((r) => {
-      const loc = r.sccmLocation || "";
-      if (loc && mailGroups[loc]) {
-        if (!byLoc.has(loc)) byLoc.set(loc, []);
-        byLoc.get(loc).push(r);
+      const to = r.sccmUserMail || "";
+      if (to) {
+        if (!byLoc.has(to)) byLoc.set(to, []);
+        byLoc.get(to).push(r);
       } else {
         noRoute.push(r);
       }
@@ -1549,7 +1689,7 @@ IT Support`;
       }
     };
 
-    for (const [loc, rows] of byLoc) await sendOne(loc, mailGroups[loc], rows);
+    for (const [to, rows] of byLoc) await sendOne(rows[0].sccmUser || rows[0].hostShort || "Kullanıcı", to, rows);
     if (noRoute.length) {
       if (fallback.length) {
         await sendOne("Eşleşmeyen cihazlar", fallback.join(", "), noRoute);
@@ -1560,7 +1700,7 @@ IT Support`;
           to: null,
           count: noRoute.length,
           ok: false,
-          message: "SCCM'de lokasyon bulunamadı ya da lokasyonun mail grubu tanımsız — alıcı kutusu da boş",
+          message: "SCCM'de kullanıcı maili bulunamadı — alıcı kutusu da boş",
         });
       }
     }
@@ -1576,15 +1716,15 @@ IT Support`;
     });
 
     if (sent === 0 && failed === 0 && skipped > 0) {
-      showToast(`❌ Gönderilemedi — ${skipped} kayıt için lokasyon/alıcı yok. Ayarlar > Lokasyon Mailleri'ni doldurun ya da üstteki kutuya adres girin.`);
+      showToast(`❌ Gönderilemedi — ${skipped} kayıt için SCCM'de kullanıcı maili yok. Üstteki kutuya yedek adres girebilirsin.`);
     } else if (skipped > 0) {
-      showToast(`⚠️ ${sent} kayıt ${byLoc.size} lokasyona gönderildi · ${skipped} kayıt eşleşmedi${failed ? ` · ${failed} başarısız` : ""}`);
+      showToast(`⚠️ ${sent} kayıt ${byLoc.size} kişiye gönderildi · ${skipped} kayıt eşleşmedi${failed ? ` · ${failed} başarısız` : ""}`);
     } else if (failed > 0 && sent === 0) {
       showToast(`❌ Gönderilemedi — ${failed} kayıt başarısız`);
     } else if (failed > 0) {
       showToast(`⚠️ ${sent} kayıt gönderildi · ${failed} başarısız`);
     } else {
-      showToast(`✅ ${sent} kayıt · ${byLoc.size} lokasyon${noRoute.length ? " + 1 yedek" : ""} mailine gönderildi`);
+      showToast(`✅ ${sent} kayıt · ${byLoc.size} kişiye${noRoute.length ? " + 1 yedek" : ""} mail gönderildi`);
     }
   };
 
@@ -1632,6 +1772,9 @@ IT Support`;
     if (isUnused) {
       return handleUnusedMail();
     }
+    if (isLokasyonIp) {
+      return handleLocationIpMail();
+    }
     if (isBsod) {
       return handleBsodMail();
     }
@@ -1655,7 +1798,9 @@ IT Support`;
       return;
     }
 
-    const mailGroups = parseMailGroupsText(mailGroupsText);
+    // Bütün lokasyon mailleri artık TEK kaynaktan (Lokasyon Mail Listesi Excel'i, "Açık Lokasyon
+    // Adı" eşleşmesiyle "Mail Adresi") geliyor — eski elle yapıştırılan metin kutusu İnaktif
+    // Cihazlar için kullanılmıyor (bkz. konuşma).
 
     // Kullanıcı isteği: "X cihazı biri kullanıyorsa ona tıkladığımda mail şablonu değişsin, eski
     // şablon kalsın" — "Kullanılıyor — Zimmet Aktarımı Gerekli" satırları eski lokasyon bazlı akışa
@@ -1680,10 +1825,10 @@ IT Support`;
     let sent = 0, failed = 0, skipped = 0;
     const details = [];
     for (const [loc, rows] of byLocation) {
-      const to = mailGroups[loc];
+      const to = resolveMailForLocationName(realLokasyonMailAll, loc);
       if (!to) {
         skipped += rows.length;
-        details.push({ location: loc, to: null, count: rows.length, ok: false, message: "Mail grubu tanımlı değil" });
+        details.push({ location: loc, to: null, count: rows.length, ok: false, message: "Lokasyon Mail Listesi'nde bu lokasyon için mail adresi bulunamadı" });
         continue;
       }
       const lines = rows.map((r) => `- ${r.owner} — ${r.serial} (${r.model})`).join("\n");
@@ -1842,6 +1987,67 @@ IT Support`;
     }
   };
 
+  // Zamanlanmış Otomatik Tarama — Ayarlar > Veri Input sekmesi ilk açıldığında backend'deki
+  // gerçek durumu çeker (bkz. konuşma: önceden sadece görsel demoydu, gerçek arka planda tarayan
+  // backend/src/anomalyScheduler.js'e bağlandı).
+  const loadAnomalySchedule = async () => {
+    try {
+      const cfg = await backendClient.getAnomalySchedule();
+      setScheduleConfig({
+        enabled: !!cfg.enabled,
+        cadence: cfg.cadence || "weekly",
+        day: cfg.day || "Pazartesi",
+        time: cfg.time || "09:00",
+        recipients: (cfg.recipients || []).join(", "),
+      });
+      setScheduleStatus({ lastRunAt: cfg.lastRunAt, knownCount: cfg.knownCount || 0 });
+    } catch {
+      // Backend'e ulaşılamıyorsa sessizce yerel varsayılanlarla kalınır — Ayarlar ekranı açık.
+    } finally {
+      setScheduleLoaded(true);
+    }
+  };
+
+  const saveAnomalySchedule = async () => {
+    setSavingSchedule(true);
+    try {
+      const recipients = scheduleConfig.recipients.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
+      const saved = await backendClient.saveAnomalySchedule({
+        enabled: scheduleConfig.enabled,
+        cadence: scheduleConfig.cadence,
+        day: scheduleConfig.day,
+        time: scheduleConfig.time,
+        recipients,
+      });
+      setScheduleConfig((prev) => ({ ...prev, recipients: recipients.join(", ") }));
+      setScheduleStatus({ lastRunAt: saved.lastRunAt, knownCount: saved.knownCount || 0 });
+      showToast(scheduleConfig.enabled && recipients.length === 0 ? "⚠️ Kaydedildi — ama alıcı e-posta girilmediği için tarama mail atmayacak" : "✅ Otomatik tarama ayarları kaydedildi");
+    } catch (err) {
+      showToast(`❌ Kaydedilemedi — ${err.message}`);
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const runAnomalyScanNow = async () => {
+    setRunningScanNow(true);
+    try {
+      const result = await backendClient.runAnomalyScanNow();
+      setScheduleStatus({ lastRunAt: new Date().toISOString(), knownCount: result.totalAnomalies });
+      if (result.isFirstRun) {
+        showToast(`✅ İlk tarama tamamlandı — ${result.totalAnomalies} mevcut uyuşmazlık baz alındı (bundan sonrakiler "yeni" sayılacak)`);
+      } else if (result.newCount === 0) {
+        showToast(`✅ Tarama tamamlandı — yeni uyuşmazlık yok (${result.totalAnomalies} toplam)`);
+      } else {
+        showToast(`✅ Tarama tamamlandı — ${result.newCount} yeni uyuşmazlık için mail ${result.mailResult ? "gönderildi" : "gönderilemedi (alıcı/SMTP eksik)"}`);
+      }
+    } catch (err) {
+      showToast(`❌ Tarama başarısız — ${err.message}`);
+    } finally {
+      setRunningScanNow(false);
+    }
+  };
+
   const testFileSourceConnection = async () => {
     if (!fileSourceConfig.folderPath.trim()) {
       showToast("Önce klasör yolunu gir");
@@ -1943,6 +2149,22 @@ IT Support`;
       if (!silent) showToast(err.message || "Dosyadan veri yüklenemedi");
     } finally {
       setLoadingRealSccm(false);
+    }
+  };
+
+  const loadRealLokasyonMailData = async ({ silent = false } = {}) => {
+    setLoadingRealLokasyonMail(true);
+    try {
+      const { fileName, modifiedAt, rows } = await fetchLokasyonMailRowsFromFile();
+      setBackendReachable(true);
+      setRealLokasyonMailAll(rows);
+      setRealLokasyonMailMeta({ fileName, modifiedAt });
+      if (!silent) showToast(`${fileName} içinden ${rows.length} lokasyon kaydı yüklendi`);
+    } catch (err) {
+      setBackendReachable(false);
+      if (!silent) showToast(err.message || "Dosyadan veri yüklenemedi");
+    } finally {
+      setLoadingRealLokasyonMail(false);
     }
   };
 
@@ -2179,6 +2401,9 @@ IT Support`;
       // İnaktif Cihazlar artık SCCM ile karşılaştırılıyor (kim fiilen kullanıyor?) — bkz. konuşma,
       // inaktifComparisonService.js. TH'ye ihtiyaç yok, liste zaten TH'den gelen inaktif listesi.
       loadRealSccmData({ silent: true });
+      // Mail Gönder butonu artık lokasyon mailini Lokasyon Mail Listesi'nden (Açık Lokasyon Adı
+      // eşleşmesiyle) çekiyor — bkz. konuşma: "Bütün lokasyon mailleri tek bir yerden çekilecek".
+      loadRealLokasyonMailData({ silent: true });
     }
     if (activeReport === "disk") loadRealDiskData({ silent: true });
     // Madde 7 — "Kullanılmayan Cihazlar": OBS zimmetli (TH) ama SCCM'de yok / son giriş çok eski
@@ -2189,6 +2414,9 @@ IT Support`;
       loadRealMonitorData({ silent: true });
       loadRealInaktifData({ silent: true });
       loadRealDiskData({ silent: true });
+      // Mail Gönder artık lokasyon mailini Lokasyon Mail Listesi'nden çekiyor (İnaktif Cihazlar'a
+      // ek olarak — bkz. konuşma).
+      loadRealLokasyonMailData({ silent: true });
     }
     if (activeReport === "zimmet") {
       loadRealSccmData({ silent: true });
@@ -2196,6 +2424,12 @@ IT Support`;
       // klasör senkronu kurulmadıysa backend sessizce hata döner, manuel yükleme hâlâ kullanılabilir.
       loadRealThData({ silent: true });
       loadRealMonitorData({ silent: true });
+    }
+    // Lokasyon Hostname ve IP Uyuşmazlığı — SCCM (hostname+IP) ve Lokasyon Mail Listesi
+    // (lokasyon kodu+IP) çapraz karşılaştırılır (bkz. konuşma).
+    if (activeReport === "lokasyon-ip") {
+      loadRealSccmData({ silent: true });
+      loadRealLokasyonMailData({ silent: true });
     }
     // LAKESIDE BSOD / Battery Health: hostname -> SCCM eşleşmesiyle lokasyon/kullanıcı bilgisi
     // getirilip mail lokasyon bazlı gönderilebilsin diye SCCM da yüklenir.
@@ -2622,29 +2856,31 @@ IT Support`;
 
                 const goDashboardReport = (id) => { goReport(id); };
 
-                // "Son 2 Haftalık Özet" — Dashboard KPI kartlarının üstündeki boş alan için (bkz.
-                // konuşma, madde 3). TEK kaynak: periodComparisonService.rollingWindowSummary,
-                // reportSnapshots'ın KENDİSİNİ kullanır — bu, aynı reportSnapshots state'i zaten
-                // Çözüm/Müdahale İstatistikleri panelini ve ilgili sayfaların "problemli cihaz"
+                // "Rapor Durumu Mini Özeti" — Dashboard KPI kartlarının üstündeki boş alan İÇİN
+                // (bkz. konuşma, madde 3) VE her rapor sayfasının üst kısmı için (bkz. konuşma:
+                // "haftalık/aylık filtrelenebilecek şekilde yapman lazım ve bütün raporlarda
+                // gözükmeli"). TEK kaynak: periodComparisonService.latestPeriodSummary +
+                // reportSnapshots'ın KENDİSİ — bu, aynı reportSnapshots state'i zaten Çözüm/
+                // Müdahale İstatistikleri panelini ve ilgili sayfaların "problemli cihaz"
                 // sayılarını (postSnapshot'a giden aynı satırlar) beslediği için Dashboard ile
                 // sayfa üstü rakamlar arasında ayrı bir hesaplama yolu AÇILMAZ (madde 4/5 —
-                // senkronizasyon). Snapshot geçmişi 2 dönemden azsa null döner, kart o zaman
-                // sessizce mini özeti göstermez (madde 14 — hata vermez).
-                const last2wInaktif = rollingWindowSummary(reportSnapshots.inaktif, 14);
-                const last2wDisk = rollingWindowSummary(reportSnapshots.disk, 14);
-                const last2wZimmet = rollingWindowSummary(reportSnapshots.zimmet, 14);
+                // senkronizasyon), ve Haftalık/Aylık seçimi TEK bir paylaşılan state
+                // (summaryPeriod) olduğu için her yerde aynı dönem gösterilir. Snapshot geçmişi
+                // 2 dönemden azsa null döner, o zaman sessizce mini özet gösterilmez (madde 14).
+                const last2wInaktif = summaryFor("inaktif");
+                const last2wDisk = summaryFor("disk");
+                const last2wZimmet = summaryFor("zimmet");
                 const rollingMiniSummary = (s) =>
                   !s ? null : (
                     <div
                       style={{ display: "flex", gap: 8, fontSize: 10.5, fontFamily: "monospace", color: pal.inkSoft, marginBottom: 2 }}
-                      title={`Son ${s.actualDays} gün — ${new Date(s.fromDate).toLocaleDateString("tr-TR")} → ${new Date(s.toDate).toLocaleDateString("tr-TR")}`}
+                      title={`${s.prevLabel} → ${s.periodLabel}`}
                     >
                       <span style={{ color: pal.ok }}>çöz {s.cozulen}</span>
                       <span style={{ color: pal.bad }}>yeni {s.yeniTespit}</span>
                       <span style={{ color: pal.warnFg }}>bek {s.devamEden}</span>
                     </div>
                   );
-
                 const barList = (items, { color, emptyText = "Kayıt yok" }) => {
                   const max = items.reduce((m, it) => Math.max(m, it.count), 0) || 1;
                   if (items.length === 0) return <p style={{ ...styles.pageSub, margin: 0 }}>{emptyText}</p>;
@@ -2694,6 +2930,10 @@ IT Support`;
                         <div>
                           <p style={styles.pageTitle}>IT Operations Dashboard</p>
                           <p style={styles.pageSub}>İnaktif Cihazlar, Disk Alanı ve Zimmet Uyuşmazlığı gerçek verilerle</p>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 11.5, color: pal.inkSoft }}>Kart özetleri:</span>
+                          {summaryPeriodToggle}
                         </div>
                         {dashboardCompanyFilter !== "all" && (
                           <div style={{ ...styles.badge, background: pal.accentSoft, color: pal.accent, fontSize: 13, padding: "7px 14px" }}>
@@ -3125,17 +3365,35 @@ IT Support`;
                 <p style={styles.pageSub}>İnaktif ve Kullanılmayan Cihazlar raporlarının lokasyon bazlı mail dağıtımı ve departman bildirim tercihleri</p>
 
                 <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
+                <div style={{ ...styles.panel, padding: "14px 16px", marginBottom: 16, background: pal.fieldBg }}>
+                  <p style={{ ...styles.formLabel, marginBottom: 4 }}>
+                    📄 Lokasyon Mail Listesi <span style={{ fontWeight: 400, color: pal.inkSoft }}>— İnaktif Cihazlar ve Kullanılmayan Cihazlar için TEK kaynak</span>
+                  </p>
+                  <p style={{ ...styles.pageSub, margin: 0 }}>
+                    {realLokasyonMailMeta
+                      ? `${realLokasyonMailMeta.fileName} — ${realLokasyonMailAll.length} lokasyon kaydı yüklü (${new Date(realLokasyonMailMeta.modifiedAt).toLocaleString("tr-TR")}). Eşleştirme "Açık Lokasyon Adı" üzerinden, gönderilen adres "Mail Adresi" sütunundan alınır — aşağıdaki metin kutusu bu iki rapor için ARTIK KULLANILMIYOR.`
+                      : "Henüz yüklenmedi — İnaktif Cihazlar veya Kullanılmayan Cihazlar raporuna girildiğinde otomatik yüklenir, ya da aşağıdan manuel yükleyebilirsin."}
+                  </p>
+                  <div
+                    style={{ ...styles.chipToggle, display: "inline-block", marginTop: 8 }}
+                    onClick={loadingRealLokasyonMail ? undefined : loadRealLokasyonMailData}
+                  >
+                    {loadingRealLokasyonMail ? "Yükleniyor..." : "📄 SharePoint'ten Lokasyon Mail Listesini Yükle"}
+                  </div>
+                </div>
                 <div style={styles.settingsSectionHead}>
-                  <p style={styles.settingsSectionTitle}>İnaktif Cihazlar — Lokasyon Mail Grupları</p>
+                  <p style={styles.settingsSectionTitle}>Diğer Raporlar — Lokasyon Mail Grupları (eski)</p>
                   <span style={{ ...styles.demoTag, ...(backendReachable ? styles.badgeOk : {}) }}>
                     {backendReachable === null ? "Kontrol ediliyor..." : backendReachable ? "Backend Bağlı" : "Backend Çalışmıyor"}
                   </span>
                 </div>
                 <p style={styles.pageSub}>
-                  İnaktif Cihazlar raporunda "Mail Gönder" her lokasyondaki kayıtları burada tanımlı mail
-                  grubuna gönderir. Excel'den iki sütunu (lokasyon, mail) kopyalayıp aşağıya yapıştırabilirsin —
-                  her satır bir eşleşmedir, sütunlar arasında tab, virgül veya noktalı virgül olabilir. İstersen
-                  bunun yerine bir Excel/CSV dosyası da seçebilirsin, aşağıdaki kutuyu senin adına doldurur.
+                  Bu liste artık İnaktif Cihazlar ve Kullanılmayan Cihazlar için kullanılmıyor (onlar yukarıdaki
+                  Lokasyon Mail Listesi'nden besleniyor) — hâlâ BSOD, Kapatma Onayı Bekleyen Kayıtlar ve Yeni
+                  Kurulum Kaydı ekranlarının lokasyon/mail eşleşmesinde kullanılıyor. Excel'den iki sütunu
+                  (lokasyon, mail) kopyalayıp aşağıya yapıştırabilirsin — her satır bir eşleşmedir, sütunlar
+                  arasında tab, virgül veya noktalı virgül olabilir. İstersen bunun yerine bir Excel/CSV dosyası
+                  da seçebilirsin, aşağıdaki kutuyu senin adına doldurur.
                 </p>
                 <label style={{ ...styles.btnGhost, cursor: "pointer", display: "inline-flex", marginTop: 4 }}>
                   Dosyadan İçe Aktar…
@@ -3251,9 +3509,30 @@ IT Support`;
                     disabled={!scheduleConfig.enabled}
                   />
                 </div>
-                <button style={{ ...styles.btnPrimary, marginTop: 14 }} onClick={() => showToast("Ayarlar kaydedildi (demo) — gerçek entegrasyonda otomatik tarama burada devreye girecek")}>
-                  Kaydet
-                </button>
+                <input
+                  type="text"
+                  value={scheduleConfig.recipients}
+                  onChange={(e) => setScheduleConfig((prev) => ({ ...prev, recipients: e.target.value }))}
+                  placeholder="Alıcı e-posta(lar) — virgülle ayır"
+                  style={{ ...styles.formInput, marginTop: 10, maxWidth: 420 }}
+                  disabled={!scheduleConfig.enabled}
+                />
+                <p style={{ ...styles.formHelper, margin: "4px 0 0" }}>
+                  Mükerrer Çift Zimmet ve Lokasyon Hostname/IP Uyuşmazlığı için — sadece bir önceki taramadan bu yana YENİ çıkanlar mail edilir, ilk taramada sadece mevcut durum baz alınır.
+                </p>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+                  <button style={styles.btnPrimary} onClick={saveAnomalySchedule} disabled={savingSchedule}>
+                    {savingSchedule ? "Kaydediliyor..." : "Kaydet"}
+                  </button>
+                  <button style={styles.btnGhost} onClick={runAnomalyScanNow} disabled={runningScanNow}>
+                    {runningScanNow ? "Taranıyor..." : "🔍 Şimdi Tara"}
+                  </button>
+                  {scheduleStatus?.lastRunAt && (
+                    <span style={{ fontSize: 12.5, color: pal.inkSoft }}>
+                      Son tarama: {new Date(scheduleStatus.lastRunAt).toLocaleString("tr-TR")} · {scheduleStatus.knownCount} uyuşmazlık kayıtlı
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div style={{ ...styles.panel, padding: "20px 24px" }}>
@@ -3709,7 +3988,7 @@ IT Support`;
               showToast={showToast}
             />
           ) : activeReport === "kapatma-onayi" ? (
-            <PendingClosureScreen styles={styles} pal={pal} showToast={showToast} mailGroupsText={mailGroupsText} thRows={realThAll} />
+            <PendingClosureScreen styles={styles} pal={pal} showToast={showToast} thRows={realThAll} />
           ) : activeNetworkView ? (
             <>
               <div style={{ ...styles.panel, padding: "20px 24px" }}>
@@ -3733,6 +4012,10 @@ IT Support`;
                     ? realSccmMeta
                       ? `Gerçek veri (SCCM) — ${realSccmMeta.fileName} (${new Date(realSccmMeta.modifiedAt).toLocaleString("tr-TR")}) · her kişinin zimmetli cihazı ile fiilen kullandığı cihaz karşılaştırılıyor`
                       : "Henüz SCCM envanter dosyası yüklenmedi — aşağıdan yükleyin"
+                    : isLokasyonIp
+                    ? realSccmMeta && realLokasyonMailMeta
+                      ? `SCCM (${realSccmMeta.fileName}) × Lokasyon Mail Listesi (${realLokasyonMailMeta.fileName}) — hostname'in işaret ettiği ofis ile cihazın gerçek 172.x IP'si karşılaştırılıyor. Sadece lokasyon kodu bilinen ve 172.x IP'si olan cihazlar listelenir.`
+                      : "Henüz SCCM ve/veya Lokasyon Mail Listesi dosyası yüklenmedi — aşağıdan yükleyin"
                     : isUnused
                     ? realThMeta
                       ? `TuruncuHat (OBS zimmetli) × SCCM karşılaştırması — SCCM'de hiç kaydı olmayan veya son girişi ${staleDays} günden eski cihazlar "kullanılmıyor" sayılır. Eşik Ayarlar'dan değiştirilebilir.`
@@ -3749,6 +4032,7 @@ IT Support`;
                     ? `Gerçek veri — ${(usingRealInaktif ? realInaktifMeta : realDiskMeta).fileName} (${new Date((usingRealInaktif ? realInaktifMeta : realDiskMeta).modifiedAt).toLocaleString("tr-TR")})`
                     : "Sahte veri ile demo · gerçek API bağlandığında burası canlı veriyle güncellenecek"}
                 </p>
+                {reportPageSummary(activeReport)}
                 {isBsod && (
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
                     <label style={{ ...styles.chipToggle, display: "inline-flex", cursor: "pointer" }}>
@@ -3792,6 +4076,16 @@ IT Support`;
                 {isZimmet && (
                   <div style={{ ...styles.chipToggle, display: "inline-block", marginBottom: 10 }} onClick={loadingRealSccm ? undefined : loadRealSccmData}>
                     {loadingRealSccm ? "Yükleniyor..." : "📄 SharePoint'ten SCCM Envanterini Yükle"}
+                  </div>
+                )}
+                {isLokasyonIp && (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                    <div style={{ ...styles.chipToggle, display: "inline-block" }} onClick={loadingRealSccm ? undefined : loadRealSccmData}>
+                      {loadingRealSccm ? "Yükleniyor..." : "📄 SharePoint'ten SCCM Envanterini Yükle"}
+                    </div>
+                    <div style={{ ...styles.chipToggle, display: "inline-block" }} onClick={loadingRealLokasyonMail ? undefined : loadRealLokasyonMailData}>
+                      {loadingRealLokasyonMail ? "Yükleniyor..." : "📄 SharePoint'ten Lokasyon Mail Listesini Yükle"}
+                    </div>
                   </div>
                 )}
                 {isUnused && (
@@ -3975,6 +4269,7 @@ IT Support`;
                       // görünürdü.
                       ...(isZimmet && anyMonitorIssue ? [{ id: "monitorIssue", label: "Monitör Uyuşmazlığı" }] : []),
                       ...(isZimmet && anyNoThRecord ? [{ id: "noThRecord", label: "TH Kaydı YOK" }] : []),
+                      ...(isZimmet && anyDuplicateNotebook ? [{ id: "duplicateNotebook", label: "Mükerrer Çift Zimmet" }] : []),
                     ].map((s) => (
                       <div key={s.id} onClick={() => setSegment(s.id)} style={{ ...styles.seg, ...(segment === s.id ? styles.segActive : {}) }}>
                         {s.label}

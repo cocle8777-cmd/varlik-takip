@@ -10,6 +10,7 @@
 //   LastLogon UserName -> gerçekte giriş yapanın kısa adı, LastLogonUser -> uzun/DOMAIN\kullanıcı biçimi
 //   İştirak -> şirket kodu, EnvanterLokasyon/EnvanterLocationParent -> lokasyon
 import { backendClient } from "./backendClient";
+import { daysSince, DEFAULT_STALE_DAYS } from "./comparisonService";
 
 function col(row, ...names) {
   for (const name of names) {
@@ -40,11 +41,26 @@ export function mapSccmRow(raw) {
   // format bağımsız, kesin bir eşleştirme sağlıyor.
   const userSicil = col(raw, "Last LogonSicil", "Last LogonSicil ", "LastLogonSicil");
 
+  const lastLogonTime = col(raw, "LastLogonTime");
+  const lastLogonDaysAgo = daysSince(lastLogonTime);
+
   let statusTag, matched, detail;
   if (!ownerShort && userShort) {
-    statusTag = "Zimmetsiz Kullanım";
-    matched = false;
-    detail = `${serial} seri numaralı cihazın envanter kaydı yok, ${userShort} kullanıyor.`;
+    // "Envanter kaydı yok + SCCM'de bir kullanıcı görünüyor" tek başına KANIT değil — o kullanıcı
+    // adı aylar/yıllar önceki bir oturumdan kalmış olabilir (cihaz sonradan depoya dönmüş olabilir).
+    // Gerçek/güncel kullanım ancak son girişin yakın tarihli olmasıyla doğrulanır — aynı eşik
+    // (DEFAULT_STALE_DAYS) "Kullanılmayan Cihazlar" raporunda da kullanılıyor (bkz. konuşma).
+    if (lastLogonDaysAgo != null && lastLogonDaysAgo <= DEFAULT_STALE_DAYS) {
+      statusTag = "Zimmetsiz Kullanım";
+      matched = false;
+      detail = `${serial} seri numaralı cihazın envanter kaydı yok, ${userShort} kullanıyor (son giriş ${lastLogonDaysAgo} gün önce).`;
+    } else {
+      statusTag = "Zimmetsiz Kullanım (Doğrulanamadı)";
+      matched = false;
+      detail = lastLogonDaysAgo != null
+        ? `${serial} seri numaralı cihazın envanter kaydı yok; SCCM'de ${userShort} görünüyor ama son giriş ${lastLogonDaysAgo} gün önce (eşik: ${DEFAULT_STALE_DAYS} gün) — güncel kullanım doğrulanamıyor, muhtemelen depoya dönmüş.`
+        : `${serial} seri numaralı cihazın envanter kaydı yok; SCCM'de ${userShort} görünüyor ama son giriş tarihi bilinmiyor — güncel kullanım doğrulanamıyor.`;
+    }
   } else if (!userShort) {
     statusTag = "Kullanım Kaydı Yok";
     matched = false;
@@ -79,6 +95,10 @@ export function mapSccmRow(raw) {
     location: location || "—",
     lbsParent: col(raw, "EnvanterLocationParent"),
     company: col(raw, "İştirak"),
+    // Lokasyon Hostname ve IP Uyuşmazlığı raporu için — SCCM'in "IPAddresses" sütunu virgülle
+    // ayrılmış birden fazla IP taşıyabilir (VPN/sanal adaptörler dahil); ham haliyle taşınır,
+    // filtreleme (172.x seçimi) locationIpService.js'te yapılır (bkz. konuşma).
+    ipAddresses: col(raw, "IPAddresses"),
     office: location || "—",
     lastLogonTime: col(raw, "LastLogonTime"),
     // Disk Alanı kritik mail'i için ek alanlar — Disk Alanı Excel'inde bulunmayan Seri No/OU/

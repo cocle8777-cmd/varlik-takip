@@ -134,40 +134,21 @@ export function periodTrendSeries(periods, filterFn = () => true) {
   return out;
 }
 
-// "Son N Gün" özeti (varsayılan 14 — bkz. konuşma: "Son 2 Haftalık Özet"). Tek bir kanonik
-// hesaplama: en güncel snapshot ile, N gün öncesine EN YAKIN (o tarihten eski/eşit) snapshot
-// arasında comparePeriods çalıştırır. Bu, Dashboard'daki mini rapor-durumu özetleri İÇİN TEK
-// kaynak olsun diye buraya eklendi — başka hiçbir component kendi "son 2 hafta" hesabını
-// yapmamalı, hepsi bu fonksiyonu çağırmalı (gereksinim: "aynı veri farklı yerlerde farklı
-// hesaplanmasın"). raporun/rowMeta'nın "Çözüldü" durumuyla KARIŞTIRILMASIN — bu, cihazın
-// problemli listeden fiilen çıkıp çıkmadığını (snapshot karşılaştırması) ölçer, tıpkı
-// comparePeriods'ın geri kalanı gibi.
-//   bekleyen (devamEden) = N gün önce de sorunluydu, hâlâ sorunlu
-//   çözülen              = N gün önce sorunluydu, artık listede yok
-//   yeni gelen            = N gün önce yoktu, şimdi sorunlu listede
-export function rollingWindowSummary(snapshots, days = 14, filterFn = () => true) {
-  const sorted = [...(snapshots || [])]
-    .filter((s) => s && !Number.isNaN(new Date(s.capturedAt).getTime()))
-    .sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt));
-  if (sorted.length < 2) return null;
-
-  const curr = sorted[sorted.length - 1];
-  const cutoff = new Date(curr.capturedAt).getTime() - days * 86400000;
-  // Cutoff'tan eski/eşit olan en SON (en güncel) snapshot — yoksa en eski snapshot'a düş
-  // (madde 14 — az veri varken de hata vermesin, sadece pencere fiilen N günden kısa olur).
-  let prev = null;
-  for (const s of sorted) {
-    if (new Date(s.capturedAt).getTime() <= cutoff) prev = s;
-    else break;
-  }
-  if (!prev) prev = sorted[0];
-  if (prev === curr) return null; // tek nokta — karşılaştırılacak ikinci bir dönem yok
-
-  const { counts } = comparePeriods(prev, curr, filterFn);
-  return {
-    ...counts,
-    fromDate: prev.capturedAt,
-    toDate: curr.capturedAt,
-    actualDays: Math.round((new Date(curr.capturedAt) - new Date(prev.capturedAt)) / 86400000),
-  };
+// TEK kanonik "son dönem özeti" hesaplaması — Dashboard'daki mini rapor-durumu kartları VE her
+// rapor sayfasının üst kısmındaki özet AYNI fonksiyonu çağırır (bkz. konuşma: "haftalık/aylık
+// filtrelenebilecek şekilde yapman lazım ve bütün raporlarda gözükmeli"). groupSnapshotsByPeriod
+// ile AYNI dönem mantığını kullanır (ManagementKpiPanel'in "Aylık/Haftalık" filtresiyle birebir
+// tutarlı) — başka hiçbir yerde ayrı bir "son dönem" hesabı YAPILMAMALI, hepsi buradan geçmeli.
+//   bekleyen (devamEden) = önceki dönemde de sorunluydu, hâlâ sorunlu
+//   çözülen              = önceki dönemde sorunluydu, bu dönem listede yok
+//   yeni gelen            = önceki dönemde yoktu, bu dönem sorunlu listede
+// Yetersiz veri (2 dönemden az) durumunda null döner — çağıran taraf "veri bekleniyor" gösterir,
+// uygulama hata vermez (madde 14).
+export function latestPeriodSummary(snapshots, mode = "week", filterFn = () => true) {
+  const periods = groupSnapshotsByPeriod(snapshots, mode);
+  if (periods.length < 2) return null;
+  const prevP = periods[periods.length - 2];
+  const currP = periods[periods.length - 1];
+  const { counts } = comparePeriods(prevP.snapshot, currP.snapshot, filterFn);
+  return { ...counts, periodLabel: currP.label, prevLabel: prevP.label };
 }

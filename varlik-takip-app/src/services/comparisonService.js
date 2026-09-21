@@ -27,6 +27,18 @@
 // fazla kişinin kullanması normaldir — "Zimmet Hatalı" sayılmaz.
 export const norm = (v) => String(v || "").trim().toLowerCase();
 
+// Genel "son X günden eski mi" yardımcı fonksiyonu — Kullanılmayan Cihazlar raporu ve Zimmet
+// Uyuşmazlığı'ndaki "gerçek/güncel kullanım kanıtı" kontrolleri AYNI eşiği paylaşır (bkz. konuşma).
+// Kanonik kaynak burası — unusedDeviceService.js ve sccmFileService.js buradan alır, döngüsel
+// import'tan kaçınmak için (comparisonService zaten en alttaki ortak yardımcı modül).
+export const DEFAULT_STALE_DAYS = 90;
+export function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
 // Kullanıcı isteği: "Model olarak Desktop, Laptop, Monitor kullanacağız, geri kalan şu anlık
 // lazım değil" — TH'nin ham "Model" sütunundaki gerçek değerler (büyük harf, İngilizce).
 const RELEVANT_TH_TYPES = new Set(["DESKTOP", "NOTEBOOK", "MONITOR"]);
@@ -51,8 +63,24 @@ export function compareAssignment({ actualUsername, actualSicil, thUsername, thS
   return { verifiable: false };
 }
 
-export function computeComparisonRows({ sccmRows = [], thRows = [], monitorRows = [] } = {}) {
+export function computeComparisonRows({ sccmRows = [], thRows = [], monitorRows = [], staleDays = DEFAULT_STALE_DAYS } = {}) {
   const relevantTh = thRows.filter((r) => RELEVANT_TH_TYPES.has(r.deviceType) && RELEVANT_ASSIGNMENT_TYPES.has(r.assignmentType));
+
+  // "Mükerrer Çift Zimmet" (madde: kırılım) — aynı kişiye (Owner Username, yoksa Sicil, yoksa
+  // isim) User kategorisinde BİRDEN FAZLA NOTEBOOK zimmetli görünmesi — normalde bir kişiye bir
+  // laptop beklenir, ikinci bir laptop görülmesi kendi başına bir uyuşmazlık (kullanım eşleşmesi
+  // doğru olsa bile). Sadece NOTEBOOK için — kullanıcı isteği: "2. seçenekte sadece istediğimiz
+  // notebook" (bkz. konuşma) — Desktop/Monitor bu kurala dahil değil.
+  const ownerIdentity = (th) => norm(th.ownerUsername) || norm(th.ownerSicil) || norm(th.owner);
+  const notebookOwnerCounts = new Map(); // identity -> seri no listesi
+  relevantTh
+    .filter((r) => r.deviceType === "NOTEBOOK" && r.assignmentType === "User")
+    .forEach((r) => {
+      const id = ownerIdentity(r);
+      if (!id) return;
+      if (!notebookOwnerCounts.has(id)) notebookOwnerCounts.set(id, []);
+      notebookOwnerCounts.get(id).push(r.serial);
+    });
 
   const sccmBySerial = new Map();
   sccmRows.forEach((s) => {
@@ -222,6 +250,19 @@ export function computeComparisonRows({ sccmRows = [], thRows = [], monitorRows 
       }
     }
 
+    // Mükerrer çift zimmet — bu satırın kendi doğru/hatalı kullanım sonucundan BAĞIMSIZ olarak,
+    // aynı kişiye ikinci (veya daha fazla) bir notebook zimmetli görünmesi başlı başına bir
+    // uyuşmazlıktır; bu yüzden yukarıdaki statusTag'i EZER (override).
+    if (th.deviceType === "NOTEBOOK") {
+      const dupSerials = notebookOwnerCounts.get(ownerIdentity(th));
+      if (dupSerials && dupSerials.length > 1) {
+        const others = dupSerials.filter((sn) => sn !== th.serial);
+        statusTag = "Mükerrer Çift Zimmet";
+        matched = false;
+        userDetail = `${th.owner} kişisine birden fazla notebook zimmetli görünüyor: ${th.serial} (bu kayıt) + ${others.join(", ")} — mükerrer/çift zimmet olabilir, tekilleştirme gerekir.`;
+      }
+    }
+
     const attached = s ? monitorsByHostname.get(norm(s.hostname)) || [] : [];
     const { details: monitorDetails, monitorIssue, monitorUnverified } = buildMonitorDetails(attached);
 
@@ -304,5 +345,58 @@ export function computeComparisonRows({ sccmRows = [], thRows = [], monitorRows 
       _thRaw: null,
     }));
 
-  return [...thRowsMapped, ...noThRows];
+  // TH'de "Warehouse" (depoda, zimmetsiz) görünen ama SCCM'de YAKIN TARİHLİ bir aktif kullanım
+  // kaydı olan cihazlar (bkz. konuşma: "TH'de depoda gözüküyor ama ben 1 hafta önce login
+  // olmuşum, bunu nasıl gösterebiliriz"). RELEVANT_ASSIGNMENT_TYPES filtresi Warehouse'u normalde
+  // TAMAMEN dışlıyor (aksi halde depoda gerçekten boşta duran binlerce cihaz "Zimmet Hatalı"
+  // sayılırdı) — burada SADECE staleDays içinde gerçek/güncel kullanım kanıtı varsa (aynı eşik,
+  // sccmFileService.js'teki "Zimmetsiz Kullanım" ile tutarlı) ayrıca gösteriliyor; eski/bilinmeyen
+  // bir giriş kanıt sayılmaz, cihaz gerçekten depoda duruyor olabilir.
+  const warehouseTh = thRows.filter((r) => RELEVANT_TH_TYPES.has(r.deviceType) && r.assignmentType === "Warehouse");
+  const warehouseUsedRows = warehouseTh
+    .map((th) => {
+      const s = sccmBySerial.get(norm(th.serial));
+      if (!s) return null;
+      const sccmUser = s.userLabel && s.userLabel !== "Tespit Edilemedi" ? s.userLabel : "";
+      if (!sccmUser) return null;
+      const daysAgo = daysSince(s.lastLogonTime);
+      if (daysAgo == null || daysAgo > staleDays) return null;
+      return {
+        rowKey: `th-warehouse-used|${th.serial}`,
+        owner: "Depo (Zimmetsiz)",
+        ownerFull: "Depo (Zimmetsiz)",
+        sub: s.sub,
+        serial: th.serial,
+        ownedLabel: th.serial,
+        userLabel: sccmUser,
+        userFull: s.userFull || sccmUser,
+        personMatched: false,
+        personStatusTag: "Zimmetsiz Kullanım (Depo)",
+        assignmentType: "Warehouse",
+        model: `${th.serial} seri numaralı cihaz TuruncuHat'ta depoda (zimmetsiz) görünüyor, ancak SCCM'de ${sccmUser} tarafından ${daysAgo} gün önce kullanılmış — zimmetlenmeden kullanılıyor olabilir.`,
+        location: th.location || s.location || "—",
+        lbsParent: th.lbsParent || s.lbsParent,
+        company: th.company || s.company,
+        office: th.location || s.office || "—",
+        attachedMonitors: [],
+        monitorDetails: [],
+        monitorIssue: false,
+        monitorUnverified: false,
+        matched: false,
+        statusTag: "Zimmetsiz Kullanım (Depo)",
+        hostname: s.hostname,
+        deviceModel: s.deviceModel,
+        lastLogonTime: s.lastLogonTime,
+        lastLogonDaysAgo: daysAgo,
+        ouName: s.ouName,
+        bitlocker: s.bitlocker,
+        mail: s.mail,
+        _raw: th._raw,
+        _sccmRaw: s._raw,
+        _thRaw: th._raw,
+      };
+    })
+    .filter(Boolean);
+
+  return [...thRowsMapped, ...noThRows, ...warehouseUsedRows];
 }

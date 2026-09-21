@@ -17,6 +17,10 @@ export const ZIMMET_UNVERIFIED_TAGS = new Set([
   "Doğrulanamadı",
   // Madde 3 — SCCM'de var ama TH Excel'inde seri no yok: karşılaştırma yapılamıyor, "hatalı" değil.
   "TH Kaydı YOK",
+  // Envanter kaydı yok + SCCM'de eski/tazeliği belirsiz bir kullanıcı görünüyor — son giriş çok
+  // eskiyse (veya hiç yoksa) bu "kesin kullanım kanıtı" sayılmaz, cihaz depoya dönmüş olabilir
+  // (bkz. konuşma — sccmFileService.js DEFAULT_STALE_DAYS eşiği).
+  "Zimmetsiz Kullanım (Doğrulanamadı)",
 ]);
 export const isZimmetUnverified = (statusTag) => ZIMMET_UNVERIFIED_TAGS.has(statusTag);
 

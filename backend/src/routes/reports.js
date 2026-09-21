@@ -54,6 +54,22 @@ router.get("/sccm", (req, res) => {
   }
 });
 
+// Lokasyon Mail Listesi: tüm lokasyon mailleri (İnaktif Cihazlar mail dağıtımı) ve Lokasyon
+// Hostname/IP Uyuşmazlığı raporu için TEK kaynak — Lokasyon Kodu, Açık Lokasyon Adı, Mail
+// Adresi, Node_CP_ContactMail2, IP_Address sütunları (bkz. konuşma). Başlıklar 1. satırda.
+router.get("/lokasyon-mail", (req, res) => {
+  const cfg = readSection("fileSource") || {};
+  if (!cfg.folderPath) {
+    return res.status(400).json({ ok: false, message: "Dosya kaynağı klasörü tanımlı değil (Ayarlar > Dosya Kaynağı)" });
+  }
+  try {
+    const { fileName, rows, modifiedAt } = loadLatestReport(cfg.folderPath, "LokasyonMailListesi", { sheetIndex: 0, headerRow: 0 });
+    res.json({ ok: true, fileName, modifiedAt, rows });
+  } catch (err) {
+    res.status(502).json({ ok: false, message: err.message });
+  }
+});
+
 // TuruncuHat envanteri: aynı senkron klasördeki "TH*.xlsx" dosyalarının en güncelini okur.
 // Gerçek dosya adı tarih damgalı değil ("TH.xlsx") — findLatestFile prefix ile başlayan en son
 // değiştirilmiş dosyaya düşer (SCCM uçundaki gibi). Başlıklar 1. satırda (headerRow: 0).

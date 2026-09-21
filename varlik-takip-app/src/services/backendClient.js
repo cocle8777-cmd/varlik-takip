@@ -124,6 +124,9 @@ export const backendClient = {
   // Okuma admin şifresi istemez (rapor ekranı kullanır); yazma Ayarlar (admin) üzerinden.
   getAppConfig: () => request("/appconfig"),
   saveAppConfig: (cfg) => request("/settings/appconfig", { method: "PUT", body: JSON.stringify(cfg) }),
+  getAnomalySchedule: () => request("/settings/anomaly-schedule"),
+  saveAnomalySchedule: (cfg) => request("/settings/anomaly-schedule", { method: "PUT", body: JSON.stringify(cfg) }),
+  runAnomalyScanNow: () => request("/settings/anomaly-schedule/run-now", { method: "POST" }),
 
   // Cihaz bazlı not/durum/ertele + aksiyon geçmişi (madde 5) — kalıcı; oturum token'ıyla.
   getDeviceMeta: () => request("/devices/meta"),
@@ -149,6 +152,7 @@ export const backendClient = {
   getDiskAlaniReport: () => request("/reports/disk-alani"),
   getSccmReport: () => request("/reports/sccm"),
   getThReport: () => request("/reports/th-envanteri"),
+  getLokasyonMailReport: () => request("/reports/lokasyon-mail"),
   getMonitorReport: () => request("/reports/monitor-raporu"),
   getBsodReport: () => request("/reports/bsod"),
 };

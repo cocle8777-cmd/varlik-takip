@@ -128,6 +128,22 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
   const [mailBusy, setMailBusy] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [mailPreview, setMailPreview] = useState(null); // { url, to, at } — Ethereal/test SMTP önizleme linki
+
+  // "Kullanıcı Bilgisi" formda serbest metin, yeni cihaz henüz TuruncuHat'ta kayıtlı olmadığı için
+  // seri no üzerinden bulunamaz — ama aynı kişinin TH'de BAŞKA bir cihaza ait kaydı (ve dolayısıyla
+  // "Cihaz Sahibinin Maili"si) genelde vardır. İsim TAM doğru yazılmışsa bu haritadan otomatik
+  // bulunur (bkz. konuşma: "turuncuhat envanter excelinden ilgili kişinin email bilgisini
+  // bulamaz mıyız" — Outlook "check names" gibi bir dizin servisi yok, ama TH'deki isim eşleşmesi
+  // aynı işi görür).
+  const thByOwnerName = useMemo(() => {
+    const m = new Map();
+    thRows.forEach((t) => {
+      const key = norm(t.owner);
+      if (key && t.ownerMail && !m.has(key)) m.set(key, t.ownerMail);
+    });
+    return m;
+  }, [thRows]);
+
   // Geriye dönük sorgu — hızlı filtre çipi + serbest arama (hepsi client-side, kayıtlar zaten yüklü).
   const [qFilter, setQFilter] = useState("all"); // all | undelivered | unmailed | unsynced | waiting
   const [qText, setQText] = useState("");
@@ -362,6 +378,12 @@ export default function NewInstallScreen({ styles, pal, user, locationOptions = 
       return;
     }
     let recipients = mailTo.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
+    if (recipients.length === 0) {
+      // TuruncuHat'ta "Kullanıcı Bilgisi" (isim) ile eşleşen bir kayıt varsa o kişinin gerçek
+      // maili (bkz. konuşma) — yeni cihazın kendisi henüz TH'de olmasa bile, kişi genelde TH'de
+      // başka bir kayıtla zaten vardır.
+      recipients = [...new Set(targetRecs.map((r) => thByOwnerName.get(norm(r.userInfo))).filter(Boolean))];
+    }
     if (recipients.length === 0) {
       // lokasyon mail grupları
       const groups = Object.fromEntries(

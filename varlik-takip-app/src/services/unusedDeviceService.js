@@ -7,9 +7,12 @@
 //   (b) SCCM'de VAR ama Last Logon `staleDays` günden eski → "Kullanılmıyor (son giriş çok eski)".
 //
 // Eşleştirme güvenilir kimliklerle: serial → hostname.
-import { norm } from "./comparisonService";
+import { norm, daysSince, DEFAULT_STALE_DAYS } from "./comparisonService";
 
-export const DEFAULT_STALE_DAYS = 90;
+// Geriye dönük uyumluluk — App.jsx ve deviceOverviewService.js bunları buradan import ediyor;
+// kanonik tanım artık comparisonService.js'te (bkz. konuşma — Zimmet Uyuşmazlığı'nın da aynı
+// eşiği kullanması gerekince döngüsel import'tan kaçınmak için oraya taşındı).
+export { daysSince, DEFAULT_STALE_DAYS };
 
 // BIOS/üretim tarihinden cihaz yaşını yıl olarak döndürür (yoksa null).
 export function deviceAgeYears(biosDate) {
@@ -18,13 +21,6 @@ export function deviceAgeYears(biosDate) {
   if (Number.isNaN(d.getTime())) return null;
   const yrs = (Date.now() - d.getTime()) / (365.25 * 24 * 3600 * 1000);
   return yrs >= 0 ? Math.round(yrs * 10) / 10 : null;
-}
-
-export function daysSince(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 
 export function computeUnusedDevices({ thRows = [], sccmRows = [], staleDays = DEFAULT_STALE_DAYS } = {}) {

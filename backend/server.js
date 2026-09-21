@@ -16,6 +16,8 @@ const appConfigRouter = require("./src/routes/appconfig");
 const newInstallsRouter = require("./src/routes/newinstalls");
 const authRouter = require("./src/routes/auth");
 const authSettingsRouter = require("./src/routes/authsettings");
+const anomalyScheduleRouter = require("./src/routes/anomalyschedule");
+const anomalyScheduler = require("./src/anomalyScheduler");
 const { verifyCredentials, requireSettingsAuth } = require("./src/auth");
 const { requireAuth, requireMasterAuth } = require("./src/authMiddleware");
 const { readSection } = require("./src/store");
@@ -75,6 +77,9 @@ function createApp() {
   // Genel uygulama ayarları (Kullanılmayan Cihazlar eşiği, LakeSide batarya kaynağı) —
   // düzenleme admin şifresiyle korunur, okuma aşağıda requireAuth ile açıktır.
   app.use("/api/settings/appconfig", requireSettingsAuth, appConfigRouter);
+  // Zamanlanmış Otomatik Tarama (bkz. konuşma: "yeni uyuşmazlıkları özetler" — artık gerçek
+  // çalışıyor, Mükerrer Çift Zimmet + Lokasyon Hostname/IP Uyuşmazlığı için).
+  app.use("/api/settings/anomaly-schedule", requireSettingsAuth, anomalyScheduleRouter);
 
   // Lokasyon-mail eşleşmeleri (mailGroups) SADECE OKUMA için — Mail Gönder her oturum açmış
   // kullanıcı tarafından kullanılabilmeli, admin şifresi istemeden (bkz. konuşma: "başkası mail
@@ -134,6 +139,7 @@ function startServer({ port = process.env.PORT || 5000, host = process.env.HOST 
     const app = createApp();
     const server = app.listen(port, host, () => {
       console.log(`Varlık Takip backend http://${host}:${port} adresinde çalışıyor`);
+      anomalyScheduler.start();
       resolve(server);
     });
     server.on("error", reject);

@@ -42,6 +42,10 @@ export function mapThRow(raw) {
     ownerUsername: col(raw, "Owner Username"),
     // Yedek eşleştirme alanı — SCCM'in "Last LogonSicil" alanıyla format bağımsız karşılaştırma.
     ownerSicil: col(raw, "Cihaz Sahibinin Sicili"),
+    // Kapatma Onayı Bekleyen Kayıtlar (ve benzeri) doğrudan kişiye mail atabilsin diye — TH'de
+    // gerçek dosyada doğrulandı: "Cihaz Sahibinin Maili" (bkz. konuşma: "onların excelinde
+    // kullanıcıların email adresi olacak, onlara o şekilde direkt mail atılabilir").
+    ownerMail: col(raw, "Cihaz Sahibinin Maili"),
     serial,
     barkod: col(raw, "Varlık Barkodu"),
     marka: col(raw, "Marka"),

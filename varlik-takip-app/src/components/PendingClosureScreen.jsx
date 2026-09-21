@@ -73,7 +73,7 @@ function buildClosureReminderHtml(recs, thBySerial, lang = "tr") {
   </div>`;
 }
 
-export default function PendingClosureScreen({ styles, pal, showToast, mailGroupsText, thRows = [] }) {
+export default function PendingClosureScreen({ styles, pal, showToast, thRows = [] }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [qText, setQText] = useState("");
@@ -167,22 +167,17 @@ export default function PendingClosureScreen({ styles, pal, showToast, mailGroup
     [pending, selected, filtered]
   );
 
-  // Lokasyon → mail grubu eşlemesi (Ayarlar > Lokasyon Mailleri ile aynı kaynak — NewInstallScreen'deki
-  // sendMail ile aynı desen). Eşleşme yoksa elle e-posta sorulur.
-  const groupsByLocation = useMemo(() => {
-    const m = {};
-    (mailGroupsText || "").split("\n").forEach((l) => {
-      const [loc, mail] = l.split(/[\t,;]/).map((x) => (x || "").trim());
-      if (loc && mail && /@/.test(mail)) m[loc] = mail;
-    });
-    return m;
-  }, [mailGroupsText]);
+  // Alıcı artık TuruncuHat'taki "Cihaz Sahibinin Maili" alanından, kişiye özel gidiyor (bkz.
+  // konuşma: "onların excelinde kullanıcıların email adresi olacak, onlara o şekilde direkt mail
+  // atılabilir") — lokasyon mail grubu (mailGroupsText) burada ARTIK KULLANILMIYOR. Eşleşme yoksa
+  // elle e-posta sorulur.
 
   // Tek satır — satırdaki "Gönder"/"Tekrar Hatırlat" butonu.
   const sendReminder = async (r) => {
-    let to = groupsByLocation[r.location] || "";
+    const th = thBySerial.get(norm(r.serial));
+    let to = (th && th.ownerMail) || "";
     if (!to) {
-      const entered = window.prompt(`"${r.location || r.hostname}" için lokasyon mail grubu tanımlı değil — alıcı e-posta girin:`, "");
+      const entered = window.prompt(`"${r.userInfo || r.serial}" için TuruncuHat'ta mail adresi bulunamadı — alıcı e-posta girin:`, "");
       if (!entered || !entered.trim()) return;
       to = entered.trim();
     }
@@ -235,31 +230,33 @@ export default function PendingClosureScreen({ styles, pal, showToast, mailGroup
           showToast && showToast(`❌ Gönderilemedi — ${res.message || ""}`);
         }
       } else {
-        // Lokasyona göre grupla — her lokasyon/alıcı kendi AYRI mailini alır, aynı lokasyondaki
-        // kayıtlar tek mailde (çoklu satır tablosu) birleşir.
+        // Kişiye göre grupla (TuruncuHat "Cihaz Sahibinin Maili") — her kişi kendi AYRI mailini
+        // alır, aynı kişinin birden fazla bekleyen kaydı varsa tek mailde (çoklu satır tablosu)
+        // birleşir (bkz. konuşma).
         const groups = new Map(); // to (email) -> records[]
-        const missingLocations = new Set();
+        const missing = new Set();
         targetRecs.forEach((r) => {
-          const to = groupsByLocation[r.location] || "";
+          const th = thBySerial.get(norm(r.serial));
+          const to = (th && th.ownerMail) || "";
           if (!to) {
-            missingLocations.add(r.location || "(lokasyonsuz)");
+            missing.add(r.userInfo || r.serial || "(bilinmeyen)");
             return;
           }
           if (!groups.has(to)) groups.set(to, []);
           groups.get(to).push(r);
         });
-        // Mail grubu tanımlı olmayan lokasyonlar için elle sor (lokasyon başına bir kez).
-        for (const loc of missingLocations) {
-          const entered = window.prompt(`"${loc}" için lokasyon mail grubu tanımlı değil — alıcı e-posta girin (boş bırakırsan bu lokasyondaki kayıtlar atlanır):`, "");
+        // Maili bulunamayan kişiler için elle sor (kişi başına bir kez).
+        for (const person of missing) {
+          const entered = window.prompt(`"${person}" için TuruncuHat'ta mail adresi bulunamadı — alıcı e-posta girin (boş bırakırsan bu kayıtlar atlanır):`, "");
           const email = (entered || "").trim();
           if (email && /@/.test(email)) {
-            const recs = targetRecs.filter((r) => (r.location || "(lokasyonsuz)") === loc);
+            const recs = targetRecs.filter((r) => (r.userInfo || r.serial || "(bilinmeyen)") === person);
             if (!groups.has(email)) groups.set(email, []);
             groups.get(email).push(...recs);
           }
         }
         if (groups.size === 0) {
-          showToast && showToast("Alıcı yok — üstteki kutuya e-posta girin veya Ayarlar > Lokasyon Mailleri'ni doldurun");
+          showToast && showToast("Alıcı yok — üstteki kutuya e-posta girin, TuruncuHat'ta mail adresi eksik olabilir");
           setBulkSending(false);
           return;
         }

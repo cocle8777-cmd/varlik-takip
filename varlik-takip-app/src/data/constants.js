@@ -16,6 +16,7 @@ export const REPORT_CATEGORIES = [
       { id: "inaktif", name: "İnaktif Cihazlar" },
       { id: "disk", name: "Disk Alanı" },
       { id: "zimmet", name: "Zimmet Uyuşmazlığı" },
+      { id: "lokasyon-ip", name: "Lokasyon Hostname ve IP Uyuşmazlığı" },
       { id: "kullanilmayan", name: "Kullanılmayan Cihazlar" },
       { id: "kapatma-onayi", name: "Kapatma Onayı Bekleyen Kayıtlar" },
       { id: "yeni-kurulum", name: "Yeni Kurulum Kaydı" },
