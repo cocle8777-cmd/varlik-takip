@@ -17,6 +17,7 @@ const newInstallsRouter = require("./src/routes/newinstalls");
 const authRouter = require("./src/routes/auth");
 const authSettingsRouter = require("./src/routes/authsettings");
 const anomalyScheduleRouter = require("./src/routes/anomalyschedule");
+const bantGenisligiUploadRouter = require("./src/routes/bantgenisligiupload");
 const anomalyScheduler = require("./src/anomalyScheduler");
 const { verifyCredentials, requireSettingsAuth } = require("./src/auth");
 const { requireAuth, requireMasterAuth } = require("./src/authMiddleware");
@@ -25,7 +26,9 @@ const { readSection } = require("./src/store");
 function createApp() {
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.json());
+  // Varsayılan 100kb — Ofis Bant Genişliği CSV'si base64 olarak gönderildiğinde bunu aşabiliyor
+  // (bkz. konuşma: "bir kez yükleyeyim" — backend'e kalıcı kaydediliyor).
+  app.use(express.json({ limit: "5mb" }));
 
   // Electron'un file:// kaynaklı istekleri Origin göndermeyebilir, origin yoksa da izin verilir.
   // Ağ üzerinden erişim için sabit bir origin listesi yerine, port 5173'teki herhangi bir host'a
@@ -80,6 +83,7 @@ function createApp() {
   // Zamanlanmış Otomatik Tarama (bkz. konuşma: "yeni uyuşmazlıkları özetler" — artık gerçek
   // çalışıyor, Mükerrer Çift Zimmet + Lokasyon Hostname/IP Uyuşmazlığı için).
   app.use("/api/settings/anomaly-schedule", requireSettingsAuth, anomalyScheduleRouter);
+  app.use("/api/settings/bant-genisligi-upload", requireSettingsAuth, bantGenisligiUploadRouter);
 
   // Lokasyon-mail eşleşmeleri (mailGroups) SADECE OKUMA için — Mail Gönder her oturum açmış
   // kullanıcı tarafından kullanılabilmeli, admin şifresi istemeden (bkz. konuşma: "başkası mail

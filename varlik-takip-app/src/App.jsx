@@ -18,7 +18,7 @@ import { mapMonitorRows, fetchMonitorRowsFromFile } from "./services/monitorFile
 import { fetchLokasyonMailRowsFromFile, resolveMailForLocationName } from "./services/lokasyonMailService";
 import { computeLocationIpRows, buildLocationIpMailHtml, locationIpMailSubject } from "./services/locationIpService";
 import { mapBsodRows, fetchBsodRowsFromFile } from "./services/bsodFileService";
-import { mapBantRows } from "./services/bantGenisligiService";
+import { fetchBantRowsFromFile, uploadBantFile } from "./services/bantGenisligiService";
 import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
@@ -224,6 +224,7 @@ export default function App({ user, onLogout } = {}) {
 
   useEffect(() => {
     if (settingsTab === "veri" && !scheduleLoaded) loadAnomalySchedule();
+    if (settingsTab === "veri" && !bantLoaded) loadRealBantData({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsTab]);
 
@@ -321,6 +322,8 @@ export default function App({ user, onLogout } = {}) {
   const [realBantMeta, setRealBantMeta] = useState(null);
   const [bantSearch, setBantSearch] = useState("");
   const [bantStatusFilter, setBantStatusFilter] = useState("all"); // all | warning | ok
+  const [loadingBant, setLoadingBant] = useState(false);
+  const [bantLoaded, setBantLoaded] = useState(false);
   const [bsodMailTo, setBsodMailTo] = useState("");
   // LAKESIDE "Battery Health" — TH ile aynı: elle Excel seçimi (bkz. batteryFileService.js)
   const [realBatteryAll, setRealBatteryAll] = useState([]);
@@ -2339,28 +2342,43 @@ IT Support`;
     reader.readAsArrayBuffer(file);
   };
 
-  // Ofis Bant Genişliği — monitoring aracının UTF-16 + TAB ayraçlı CSV export'u. SheetJS
-  // kodlamayı/ayracı otomatik algılıyor; { raw: false } ile "Uyarı Durumu" sütunundaki "-%15" gibi
-  // metinler sayıya çevrilmeden aynen okunuyor (bkz. konuşma).
-  const handleManualBantFile = (e) => {
+  // Ofis Bant Genişliği — monitoring aracının UTF-16 + TAB ayraçlı CSV export'u. Kullanıcı isteği:
+  // "bir kez yükleyeyim bir daha yüklemekle uğraşmayayım" — dosya artık backend'e KALICI olarak
+  // yükleniyor (uploadBantFile), tekrar tekrar seçmeye gerek yok; sayfa/oturum yenilense de
+  // loadRealBantData ile otomatik geri gelir.
+  const loadRealBantData = async ({ silent = false } = {}) => {
+    setLoadingBant(true);
+    try {
+      const { fileName, modifiedAt, rows } = await fetchBantRowsFromFile();
+      setBackendReachable(true);
+      setRealBantAll(rows);
+      setRealBantMeta({ fileName, modifiedAt });
+      if (!silent) showToast(`${fileName} içinden ${rows.length} bant genişliği kaydı yüklendi`);
+    } catch (err) {
+      if (!silent) showToast(err.message || "Dosyadan veri yüklenemedi");
+    } finally {
+      setLoadingBant(false);
+      setBantLoaded(true);
+    }
+  };
+
+  const handleManualBantFile = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const raw = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
-        const rows = mapBantRows(raw);
-        setRealBantAll(rows);
-        setRealBantMeta({ fileName: file.name, modifiedAt: new Date(file.lastModified).toISOString() });
-        showToast(`${file.name} içinden ${rows.length} bant genişliği kaydı yüklendi${rows.length === 0 ? " (dosya boş)" : ""}`);
-      } catch (err) {
-        showToast(`Dosya okunamadı: ${err.message}`);
-      }
-    };
-    reader.readAsArrayBuffer(file);
+    setLoadingBant(true);
+    try {
+      const { fileName, modifiedAt, rows } = await uploadBantFile(file);
+      setBackendReachable(true);
+      setRealBantAll(rows);
+      setRealBantMeta({ fileName, modifiedAt });
+      setBantLoaded(true);
+      showToast(`${fileName} içinden ${rows.length} bant genişliği kaydı yüklendi ve kalıcı kaydedildi`);
+    } catch (err) {
+      showToast(`Dosya yüklenemedi: ${err.message}`);
+    } finally {
+      setLoadingBant(false);
+    }
   };
 
   const handleManualBsodFile = (e) => {
@@ -2482,6 +2500,13 @@ IT Support`;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReport, fileSourceConfig.folderPath]);
+
+  // Ofis Bant Genişliği — backend'de kalıcı yüklüyse (Ayarlar > Veri Input'tan tek seferlik
+  // yüklenmiş) rapor sayfası ziyaret edildiğinde otomatik gelir, tekrar dosya seçmeye gerek kalmaz.
+  useEffect(() => {
+    if (activeNetworkView === "bant-genisligi" && !bantLoaded) loadRealBantData({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNetworkView]);
 
   // Dashboard (ana sayfa) İnaktif, Disk ve Zimmet(SCCM+TH+Monitor) verilerini bir arada özetlediği
   // için, o sekmelere hiç girilmemiş olsa bile hepsini bir kez baştan yükler — aksi halde
@@ -3846,6 +3871,25 @@ IT Support`;
                     <p style={{ ...styles.formHelper, marginTop: 10 }}>
                       Batarya: <strong>{realBatteryMeta.fileName}</strong> ({realBatteryAll.length} kayıt ·{" "}
                       {realBatteryAll.filter((r) => r.batteryHealth != null).length} sağlık değeri okundu)
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
+                  <p style={styles.formLabel}>NETWORK — Ofis Bant Genişliği Raporu</p>
+                  <p style={styles.formHelper}>
+                    Monitoring aracının CSV export'unu buradan BİR KEZ yükle — backend'e kalıcı kaydedilir,
+                    Network → <strong>Ofis Bant Genişliği</strong> raporunda otomatik görünür, tekrar dosya
+                    seçmene gerek kalmaz (aynı seçim rapor ekranından da yapılabilir, ikisi de aynı yere kaydeder).
+                  </p>
+                  <label style={{ ...styles.btnGhost, cursor: "pointer", display: "inline-flex", marginTop: 8 }}>
+                    {loadingBant ? "Yükleniyor..." : "Bant Genişliği *.csv Seç…"}
+                    <input type="file" accept=".csv" onChange={handleManualBantFile} style={{ display: "none" }} disabled={loadingBant} />
+                  </label>
+                  {realBantMeta && (
+                    <p style={{ ...styles.formHelper, marginTop: 10 }}>
+                      Yüklü: <strong>{realBantMeta.fileName}</strong> ({realBantAll.length} kayıt ·{" "}
+                      {new Date(realBantMeta.modifiedAt).toLocaleString("tr-TR")})
                     </p>
                   )}
                 </div>

@@ -1,7 +1,10 @@
 // Ofis Bant Genişliği raporu — monitoring aracının CSV export'u (bkz. konuşma). Dosya UTF-16 +
 // TAB ayraçlı; SheetJS bunu otomatik algılıyor, tek özel nokta "Uyarı Durumu" sütununun "-%15"
 // gibi metinleri sayı gibi yorumlamaması için sheet_to_json'a { raw: false } geçilmesi (App.jsx'te
-// dosya okuma tarafında yapılıyor).
+// dosya okuma tarafında yapılıyor). Dosya artık backend'de kalıcı saklanıyor (bkz. konuşma: "bir
+// kez yükleyeyim bir daha yüklemekle uğraşmayayım") — backend AYNI SheetJS mantığıyla ayrıştırıp
+// zaten { raw:false } eşdeğeri düz metin değerleri döndürüyor, mapBantRow ikisinde de aynı şekilde çalışır.
+import { backendClient } from "./backendClient";
 function col(row, ...names) {
   for (const name of names) {
     if (row[name] !== undefined && row[name] !== "") return String(row[name]).trim();
@@ -41,4 +44,29 @@ export function mapBantRow(raw) {
 
 export function mapBantRows(rawRows) {
   return (rawRows || []).map(mapBantRow);
+}
+
+export async function fetchBantRowsFromFile() {
+  const result = await backendClient.getBantGenisligiReport();
+  if (!result.ok) throw new Error(result.message || "Dosya okunamadı");
+  return { fileName: result.fileName, modifiedAt: result.modifiedAt, rows: mapBantRows(result.rows || []) };
+}
+
+// Tarayıcıdan seçilen dosyayı base64'e çevirip backend'e yükler (kalıcı saklanır).
+function arrayBufferToBase64(buffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export async function uploadBantFile(file) {
+  const buffer = await file.arrayBuffer();
+  const base64 = arrayBufferToBase64(buffer);
+  const result = await backendClient.uploadBantGenisligi(file.name, base64);
+  if (!result.ok) throw new Error(result.message || "Dosya yüklenemedi");
+  return { fileName: result.fileName, modifiedAt: result.modifiedAt, rows: mapBantRows(result.rows || []) };
 }

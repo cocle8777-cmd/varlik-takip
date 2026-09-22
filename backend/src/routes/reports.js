@@ -1,8 +1,18 @@
 const express = require("express");
 const { readSection } = require("../store");
 const { loadLatestReport } = require("../excelSource");
+const bantStore = require("../bantGenisligiStore");
 
 const router = express.Router();
+
+// Ofis Bant Genişliği — Ayarlar > Veri Input'tan tek seferlik yüklenip kalıcı saklanan CSV
+// (bkz. konuşma: "bir kez yükleyeyim bir daha yüklemekle uğraşmayayım"). Henüz yüklenmediyse
+// 404 döner, frontend "henüz yüklenmedi" mesajını gösterir.
+router.get("/bant-genisligi", (req, res) => {
+  const loaded = bantStore.load();
+  if (!loaded) return res.status(404).json({ ok: false, message: "Henüz bir Bant Genişliği dosyası yüklenmedi" });
+  res.json({ ok: true, fileName: loaded.fileName, modifiedAt: loaded.modifiedAt, rows: loaded.rows });
+});
 
 // İnaktif Cihazlar: SharePoint/OneDrive senkron klasöründeki "İnaktifCihazlar_yyyyMMddHHmmss.xlsx"
 // dosyalarının en güncelini okuyup ham satırları döner. Kullanılacak veri dosyanın 2. sheet'inde

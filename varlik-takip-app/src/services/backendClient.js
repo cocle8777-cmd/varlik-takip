@@ -127,6 +127,10 @@ export const backendClient = {
   getAnomalySchedule: () => request("/settings/anomaly-schedule"),
   saveAnomalySchedule: (cfg) => request("/settings/anomaly-schedule", { method: "PUT", body: JSON.stringify(cfg) }),
   runAnomalyScanNow: () => request("/settings/anomaly-schedule/run-now", { method: "POST" }),
+  // Ofis Bant Genişliği — tek seferlik yükleme, backend'de kalıcı saklanır (bkz. konuşma).
+  getBantGenisligiReport: () => request("/reports/bant-genisligi"),
+  uploadBantGenisligi: (fileName, contentBase64) =>
+    request("/settings/bant-genisligi-upload", { method: "POST", body: JSON.stringify({ fileName, contentBase64 }) }),
 
   // Cihaz bazlı not/durum/ertele + aksiyon geçmişi (madde 5) — kalıcı; oturum token'ıyla.
   getDeviceMeta: () => request("/devices/meta"),
