@@ -1662,7 +1662,10 @@ IT Support`;
     const byLoc = new Map(); // mail -> rows[]
     const noRoute = [];
     targetRows.forEach((r) => {
-      const to = r.sccmUserMail || "";
+      // Battery Health'te artık öncelik kendi Excel'indeki kullanıcı mailinde (r.ownerMail, bkz.
+      // konuşma: "mail gönderirken de orada mail adresi var onu baz alacağız") — SCCM eşleşmesi
+      // (sccmUserMail) sadece bu alan boşsa (ör. BSOD, ya da Username sütunu tanınamadıysa) yedek.
+      const to = r.ownerMail || r.sccmUserMail || "";
       if (to) {
         if (!byLoc.has(to)) byLoc.set(to, []);
         byLoc.get(to).push(r);

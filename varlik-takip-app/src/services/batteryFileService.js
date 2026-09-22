@@ -31,8 +31,16 @@ function num(v) {
 
 export function mapBatteryRow(raw) {
   const machine = norm(
-    col(raw, "Machine Name", "MachineName", "Device Name", "DeviceName", "Computer Name", "ComputerName", "Hostname", "Host", "Cihaz", "Cihaz Adı")
+    col(raw, "Machine Name", "MachineName", "Device Name", "DeviceName", "Computer Name", "ComputerName", "Hostname", "Host", "Cihaz", "Cihaz Adı", "System")
   );
+  // Kullanıcı isteği (bkz. konuşma): "System" sütunu FQDN olabilir (ör. "ABJ1B03.thynet.thy.com")
+  // — hostShort zaten ilk noktadan sonrasını atıyor, ayrıca burada tekrar uygulamaya gerek yok.
+  // "Username" sütunu email formatında gelir (ör. "ahmet.yilmaz@thy.com") — mail gönderirken TAM
+  // halin kullanılır (ownerMail), tabloda ise sadece @ öncesi kısa kullanıcı adı gösterilir.
+  const usernameRaw = norm(col(raw, "Username", "User Name", "User", "Kullanıcı", "Kullanıcı Adı"));
+  const atIdx = usernameRaw.indexOf("@");
+  const username = atIdx >= 0 ? usernameRaw.slice(0, atIdx) : usernameRaw;
+  const ownerMail = atIdx >= 0 ? usernameRaw : "";
   const design = num(col(raw, "Design Capacity", "DesignCapacity", "Design Capacity (mWh)", "Tasarım Kapasitesi"));
   const full = num(col(raw, "Full Charge Capacity", "FullChargeCapacity", "Full Charge Capacity (mWh)", "Tam Şarj Kapasitesi", "Current Capacity"));
   let health = pct(col(raw, "Battery Health", "BatteryHealth", "Health", "Health (%)", "Battery Health (%)", "SoH", "State of Health", "Sağlık", "Pil Sağlığı"));
@@ -58,12 +66,17 @@ export function mapBatteryRow(raw) {
     batterySerial: serial,
     deviceModel: model,
     durum,
+    // Kullanıcı adı (@ öncesi, görüntüleme) ve mail gönderiminde KULLANILACAK tam e-posta (bkz.
+    // konuşma: "mail gönderirken de orada mail adresi var onu baz alacağız") — SCCM eşleşmesi
+    // yerine artık öncelik bu alanda (App.jsx sendLakesideMailByLocation, ownerMail'i tercih eder).
+    username,
+    ownerMail,
     // Genel liste bileşenleriyle (TableView vb.) uyum — serial/model görüntüleme amaçlı
     rowKey: `battery|${machine}|${serial}`,
     owner: shortHost(machine),
     serial: health != null ? `%${health}` : "Veri Yok",
     model: [durum, cycles != null ? `${cycles} döngü` : ""].filter(Boolean).join(" · "),
-    sub: manufacturer || model || "",
+    sub: [username, manufacturer].filter(Boolean).join(" · "),
     location: status || "—",
     lbsParent: "",
     company: "",
