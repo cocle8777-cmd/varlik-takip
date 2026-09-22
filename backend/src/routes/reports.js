@@ -2,6 +2,7 @@ const express = require("express");
 const { readSection } = require("../store");
 const { loadLatestReport } = require("../excelSource");
 const bantStore = require("../bantGenisligiStore");
+const batteryStore = require("../batteryHealthStore");
 
 const router = express.Router();
 
@@ -11,6 +12,14 @@ const router = express.Router();
 router.get("/bant-genisligi", (req, res) => {
   const loaded = bantStore.load();
   if (!loaded) return res.status(404).json({ ok: false, message: "Henüz bir Bant Genişliği dosyası yüklenmedi" });
+  res.json({ ok: true, fileName: loaded.fileName, modifiedAt: loaded.modifiedAt, rows: loaded.rows });
+});
+
+// LakeSide Battery Health — Ayarlar > Veri Input'tan tek seferlik yüklenip kalıcı saklanan Excel
+// (bkz. konuşma: "gömülü olsun her seferinde yüklemeyelim"). Henüz yüklenmediyse 404 döner.
+router.get("/battery-health", (req, res) => {
+  const loaded = batteryStore.load();
+  if (!loaded) return res.status(404).json({ ok: false, message: "Henüz bir Battery Health dosyası yüklenmedi" });
   res.json({ ok: true, fileName: loaded.fileName, modifiedAt: loaded.modifiedAt, rows: loaded.rows });
 });
 

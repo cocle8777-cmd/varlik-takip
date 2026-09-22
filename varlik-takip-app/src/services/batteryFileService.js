@@ -1,10 +1,12 @@
-// LAKESIDE "Battery Health" Excel'i — TuruncuHat/Monitor/BSOD ile aynı desen: kullanıcı dosyayı
-// elle seçer, tarayıcıda okunur (klasör yolu / native diyalog YOK — uygulama tamamen web).
+// LAKESIDE "Battery Health" Excel'i — kullanıcı dosyayı elle seçer, ama artık backend'e KALICI
+// olarak yükleniyor (bkz. konuşma: "gömülü olsun her seferinde yüklemeyelim") — Ofis Bant
+// Genişliği ile aynı desen (uploadBatteryFile / fetchBatteryRowsFromFile).
 //
 // Gerçek kolon adları LakeSide export'una göre değişebildiğinden esnek eşleme yapılır; kolon
 // bulunamazsa alan boş kalır ("Veri Yok"), uygulama hata vermez. Gerçek dosya gelince
 // COL_* listelerine tam başlık eklenebilir.
 import { shortHost } from "./bsodKnowledgeService";
+import { backendClient } from "./backendClient";
 
 const norm = (v) => String(v ?? "").trim();
 
@@ -149,4 +151,29 @@ export function batteryHealthState(r) {
     value: `%${h}${extra ? ` (${extra})` : ""}`,
     state: h < 60 ? "crit" : h < 80 ? "warn" : "ok",
   };
+}
+
+export async function fetchBatteryRowsFromFile() {
+  const result = await backendClient.getBatteryHealthReport();
+  if (!result.ok) throw new Error(result.message || "Dosya okunamadı");
+  return { fileName: result.fileName, modifiedAt: result.modifiedAt, rows: mapBatteryRows(result.rows || []) };
+}
+
+// Tarayıcıdan seçilen dosyayı base64'e çevirip backend'e yükler (kalıcı saklanır).
+function arrayBufferToBase64(buffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export async function uploadBatteryFile(file) {
+  const buffer = await file.arrayBuffer();
+  const base64 = arrayBufferToBase64(buffer);
+  const result = await backendClient.uploadBatteryHealth(file.name, base64);
+  if (!result.ok) throw new Error(result.message || "Dosya yüklenemedi");
+  return { fileName: result.fileName, modifiedAt: result.modifiedAt, rows: mapBatteryRows(result.rows || []) };
 }

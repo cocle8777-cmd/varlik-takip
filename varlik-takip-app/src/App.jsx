@@ -19,7 +19,7 @@ import { fetchLokasyonMailRowsFromFile, resolveMailForLocationName } from "./ser
 import { computeLocationIpRows, buildLocationIpMailHtml, locationIpMailSubject } from "./services/locationIpService";
 import { mapBsodRows, fetchBsodRowsFromFile } from "./services/bsodFileService";
 import { fetchBantRowsFromFile, uploadBantFile } from "./services/bantGenisligiService";
-import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./services/batteryFileService";
+import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject, fetchBatteryRowsFromFile, uploadBatteryFile } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
 import { latestPeriodSummary } from "./services/periodComparisonService";
@@ -225,6 +225,7 @@ export default function App({ user, onLogout } = {}) {
   useEffect(() => {
     if (settingsTab === "veri" && !scheduleLoaded) loadAnomalySchedule();
     if (settingsTab === "veri" && !bantLoaded) loadRealBantData({ silent: true });
+    if (settingsTab === "veri" && !batteryLoaded) loadRealBatteryData({ silent: true });
     if (settingsTab === "veri" && !ustYonetimLoaded) loadUstYonetimList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsTab]);
@@ -331,9 +332,12 @@ export default function App({ user, onLogout } = {}) {
   const [loadingBant, setLoadingBant] = useState(false);
   const [bantLoaded, setBantLoaded] = useState(false);
   const [bsodMailTo, setBsodMailTo] = useState("");
-  // LAKESIDE "Battery Health" — TH ile aynı: elle Excel seçimi (bkz. batteryFileService.js)
+  // LAKESIDE "Battery Health" — artık backend'de kalıcı saklanıyor (bkz. konuşma: "gömülü olsun
+  // her seferinde yüklemeyelim"), Ofis Bant Genişliği ile aynı desen.
   const [realBatteryAll, setRealBatteryAll] = useState([]);
   const [realBatteryMeta, setRealBatteryMeta] = useState(null);
+  const [loadingBattery, setLoadingBattery] = useState(false);
+  const [batteryLoaded, setBatteryLoaded] = useState(false);
 
   // Madde 1 — "Son Veri Güncelleme" artık global footer'da. Tüm gerçek veri dosyalarının
   // modifiedAt'lerinin en yenisi.
@@ -2121,31 +2125,41 @@ IT Support`;
     if (folder) setFileSourceConfig({ folderPath: folder });
   };
 
-  // LakeSide batarya raporu — TuruncuHat/Monitor/BSOD ile aynı desen: doğrudan Excel dosyası
-  // seçilir, tarayıcıda okunur (bkz. batteryFileService.js). Klasör yolu / native diyalog YOK.
-  const handleManualBatteryFile = (e) => {
+  // LakeSide Battery Health — artık backend'e KALICI yükleniyor (bkz. konuşma: "gömülü olsun her
+  // seferinde yüklemeyelim"), Ofis Bant Genişliği ile aynı desen (loadRealBantData/handleManualBantFile).
+  const loadRealBatteryData = async ({ silent = false } = {}) => {
+    setLoadingBattery(true);
+    try {
+      const { fileName, modifiedAt, rows } = await fetchBatteryRowsFromFile();
+      setBackendReachable(true);
+      setRealBatteryAll(rows);
+      setRealBatteryMeta({ fileName, modifiedAt });
+      if (!silent) showToast(`${fileName} içinden ${rows.length} batarya kaydı yüklendi`);
+    } catch (err) {
+      if (!silent) showToast(err.message || "Dosyadan veri yüklenemedi");
+    } finally {
+      setLoadingBattery(false);
+      setBatteryLoaded(true);
+    }
+  };
+
+  const handleManualBatteryFile = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: "array", dense: true });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        let raw = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-        // Başlık 1. satırda değilse (LakeSide export'larında sık) 2. satırdan dene.
-        if (raw.length && Object.keys(raw[0]).every((k) => /^__EMPTY/.test(k) || k === "")) {
-          raw = XLSX.utils.sheet_to_json(sheet, { defval: "", range: 1 });
-        }
-        const rows = mapBatteryRows(raw);
-        setRealBatteryAll(rows);
-        setRealBatteryMeta({ fileName: file.name, modifiedAt: new Date(file.lastModified).toISOString() });
-        showToast(`${file.name} içinden ${rows.length} batarya kaydı yüklendi${rows.length === 0 ? " (kolon adları tanınamadı)" : ""}`);
-      } catch (err) {
-        showToast(`Dosya okunamadı: ${err.message}`);
-      }
-    };
-    reader.readAsArrayBuffer(file);
+    setLoadingBattery(true);
+    try {
+      const { fileName, modifiedAt, rows } = await uploadBatteryFile(file);
+      setBackendReachable(true);
+      setRealBatteryAll(rows);
+      setRealBatteryMeta({ fileName, modifiedAt });
+      setBatteryLoaded(true);
+      showToast(`${fileName} içinden ${rows.length} batarya kaydı yüklendi ve kalıcı kaydedildi`);
+    } catch (err) {
+      showToast(`Dosya yüklenemedi: ${err.message}`);
+    } finally {
+      setLoadingBattery(false);
+    }
   };
 
   const loadRealInaktifData = async ({ silent = false } = {}) => {
@@ -2541,6 +2555,12 @@ IT Support`;
     if (activeNetworkView === "bant-genisligi" && !bantLoaded) loadRealBantData({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeNetworkView]);
+
+  // Battery Health — aynı desen (bkz. konuşma: "gömülü olsun her seferinde yüklemeyelim").
+  useEffect(() => {
+    if (isBattery && !batteryLoaded) loadRealBatteryData({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBattery]);
 
   // Dashboard (ana sayfa) İnaktif, Disk ve Zimmet(SCCM+TH+Monitor) verilerini bir arada özetlediği
   // için, o sekmelere hiç girilmemiş olsa bile hepsini bir kez baştan yükler — aksi halde
@@ -3915,18 +3935,18 @@ IT Support`;
                 <div style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${pal.line}` }}>
                   <p style={styles.formLabel}>LAKESIDE — Battery Health Raporu</p>
                   <p style={styles.formHelper}>
-                    LakeSide'ın batarya sağlığı Excel'ini seçin (BSOD ile aynı şekilde — dosya tarayıcıda okunur,
-                    klasör yolu gerekmez). LAKESIDE → <strong>Battery Health</strong> raporunda listelenir; Cihaz
-                    Genel Görünüm'deki "Batarya" kartı da hostname eşleşmesiyle otomatik dolar. Aynı seçim rapor
-                    ekranındaki "Battery Health Excel Seç…" butonuyla da yapılabilir.
+                    LakeSide'ın batarya sağlığı Excel'ini buradan BİR KEZ yükle — backend'e kalıcı kaydedilir,
+                    LAKESIDE → <strong>Battery Health</strong> raporunda otomatik görünür, tekrar dosya seçmene
+                    gerek kalmaz (aynı seçim rapor ekranından da yapılabilir, ikisi de aynı yere kaydeder). Cihaz
+                    Genel Görünüm'deki "Batarya" kartı da hostname eşleşmesiyle otomatik dolar.
                   </p>
                   <label style={{ ...styles.btnGhost, cursor: "pointer", display: "inline-flex", marginTop: 8 }}>
-                    Battery Health *.xlsx Seç…
-                    <input type="file" accept=".xlsx" onChange={handleManualBatteryFile} style={{ display: "none" }} />
+                    {loadingBattery ? "Yükleniyor..." : "Battery Health *.xlsx Seç…"}
+                    <input type="file" accept=".xlsx" onChange={handleManualBatteryFile} style={{ display: "none" }} disabled={loadingBattery} />
                   </label>
                   {realBatteryMeta && (
                     <p style={{ ...styles.formHelper, marginTop: 10 }}>
-                      Batarya: <strong>{realBatteryMeta.fileName}</strong> ({realBatteryAll.length} kayıt ·{" "}
+                      Yüklü: <strong>{realBatteryMeta.fileName}</strong> ({realBatteryAll.length} kayıt ·{" "}
                       {realBatteryAll.filter((r) => r.batteryHealth != null).length} sağlık değeri okundu)
                     </p>
                   )}

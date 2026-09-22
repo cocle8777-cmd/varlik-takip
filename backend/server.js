@@ -18,6 +18,7 @@ const authRouter = require("./src/routes/auth");
 const authSettingsRouter = require("./src/routes/authsettings");
 const anomalyScheduleRouter = require("./src/routes/anomalyschedule");
 const bantGenisligiUploadRouter = require("./src/routes/bantgenisligiupload");
+const batteryHealthUploadRouter = require("./src/routes/batteryhealthupload");
 const ustYonetimRouter = require("./src/routes/ustyonetim");
 const anomalyScheduler = require("./src/anomalyScheduler");
 const { verifyCredentials, requireSettingsAuth } = require("./src/auth");
@@ -85,6 +86,7 @@ function createApp() {
   // çalışıyor, Mükerrer Çift Zimmet + Lokasyon Hostname/IP Uyuşmazlığı için).
   app.use("/api/settings/anomaly-schedule", requireSettingsAuth, anomalyScheduleRouter);
   app.use("/api/settings/bant-genisligi-upload", requireSettingsAuth, bantGenisligiUploadRouter);
+  app.use("/api/settings/battery-health-upload", requireSettingsAuth, batteryHealthUploadRouter);
   app.use("/api/settings/ust-yonetim", requireSettingsAuth, ustYonetimRouter);
 
   // Lokasyon-mail eşleşmeleri (mailGroups) SADECE OKUMA için — Mail Gönder her oturum açmış

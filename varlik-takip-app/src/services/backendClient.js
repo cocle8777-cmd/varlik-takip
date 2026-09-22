@@ -131,6 +131,11 @@ export const backendClient = {
   getBantGenisligiReport: () => request("/reports/bant-genisligi"),
   uploadBantGenisligi: (fileName, contentBase64) =>
     request("/settings/bant-genisligi-upload", { method: "POST", body: JSON.stringify({ fileName, contentBase64 }) }),
+  // LakeSide Battery Health — Ofis Bant Genişliği ile aynı desen: tek seferlik yükleme, backend'de
+  // kalıcı saklanır (bkz. konuşma: "gömülü olsun her seferinde yüklemeyelim").
+  getBatteryHealthReport: () => request("/reports/battery-health"),
+  uploadBatteryHealth: (fileName, contentBase64) =>
+    request("/settings/battery-health-upload", { method: "POST", body: JSON.stringify({ fileName, contentBase64 }) }),
 
   // Üst Yönetim İstisna Listesi — kim üst yönetim sayılır artık Excel'den değil, admin'in elle
   // yönettiği bu sabit e-posta listesinden belirleniyor (bkz. konuşma: "excelden o verileri
