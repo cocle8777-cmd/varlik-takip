@@ -225,6 +225,7 @@ export default function App({ user, onLogout } = {}) {
   useEffect(() => {
     if (settingsTab === "veri" && !scheduleLoaded) loadAnomalySchedule();
     if (settingsTab === "veri" && !bantLoaded) loadRealBantData({ silent: true });
+    if (settingsTab === "veri" && !ustYonetimLoaded) loadUstYonetimList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsTab]);
 
@@ -251,6 +252,11 @@ export default function App({ user, onLogout } = {}) {
     d3: { inaktif: true, disk: true, zimmet: true },
   });
   const [scheduleConfig, setScheduleConfig] = useState({ enabled: false, cadence: "weekly", day: "Pazartesi", time: "09:00", recipients: "" });
+  // Üst Yönetim İstisna Listesi (bkz. konuşma: "excelden o verileri çekme hiç") — admin'in elle
+  // yönettiği, Kapatma Onayı vb. mail akışlarının asla göndermeyeceği e-posta listesi.
+  const [ustYonetimText, setUstYonetimText] = useState("");
+  const [ustYonetimLoaded, setUstYonetimLoaded] = useState(false);
+  const [savingUstYonetim, setSavingUstYonetim] = useState(false);
   const [scheduleLoaded, setScheduleLoaded] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [runningScanNow, setRunningScanNow] = useState(false);
@@ -2039,6 +2045,31 @@ IT Support`;
     }
   };
 
+  const loadUstYonetimList = async () => {
+    try {
+      const res = await backendClient.getUstYonetimListForSettings();
+      setUstYonetimText((res.emails || []).join("\n"));
+    } catch {
+      // Backend'e ulaşılamıyorsa sessizce boş bırakılır — Ayarlar ekranı yine de açık kalır.
+    } finally {
+      setUstYonetimLoaded(true);
+    }
+  };
+
+  const saveUstYonetimList = async () => {
+    setSavingUstYonetim(true);
+    try {
+      const emails = ustYonetimText.split("\n").map((s) => s.trim()).filter((s) => /@/.test(s));
+      await backendClient.saveUstYonetimList(emails);
+      setUstYonetimText(emails.join("\n"));
+      showToast(`✅ Üst yönetim istisna listesi kaydedildi — ${emails.length} e-posta`);
+    } catch (err) {
+      showToast(`❌ Kaydedilemedi — ${err.message}`);
+    } finally {
+      setSavingUstYonetim(false);
+    }
+  };
+
   const runAnomalyScanNow = async () => {
     setRunningScanNow(true);
     try {
@@ -3588,6 +3619,29 @@ IT Support`;
                       Son tarama: {new Date(scheduleStatus.lastRunAt).toLocaleString("tr-TR")} · {scheduleStatus.knownCount} uyuşmazlık kayıtlı
                     </span>
                   )}
+                </div>
+              </div>
+
+              <div style={{ ...styles.panel, padding: "20px 24px" }}>
+                <p style={styles.settingsSectionTitle}>Üst Yönetim İstisna Listesi</p>
+                <p style={styles.pageSub}>
+                  Buradaki e-posta adreslerine Kapatma Onayı Bekleyen Kayıtlar (ve ileride eklenecek benzer
+                  hatırlatma akışları) KESİNLİKLE mail göndermez — Excel'den okunmaz, sadece burada elle
+                  yönetilir. Her satıra bir e-posta.
+                </p>
+                <textarea
+                  value={ustYonetimText}
+                  onChange={(e) => setUstYonetimText(e.target.value)}
+                  placeholder={"genel.mudur@thy.com\nbaskan@thy.com"}
+                  style={{ ...styles.formInput, width: "100%", minHeight: 120, fontFamily: "monospace", fontSize: 12.5, marginTop: 8 }}
+                />
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                  <button style={styles.btnPrimary} onClick={saveUstYonetimList} disabled={savingUstYonetim}>
+                    {savingUstYonetim ? "Kaydediliyor..." : "Kaydet"}
+                  </button>
+                  <span style={{ fontSize: 12.5, color: pal.inkSoft }}>
+                    {ustYonetimText.split("\n").map((s) => s.trim()).filter((s) => /@/.test(s)).length} geçerli e-posta
+                  </span>
                 </div>
               </div>
 

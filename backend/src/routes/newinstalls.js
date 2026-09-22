@@ -32,8 +32,29 @@ const MAIL_COL = "Mail Gönderildi";
 
 const DEFAULT_EXCEL = "C:/Users/Lenovo/varlik-test-data-3month/YeniKurulumlar-DEMO.xlsx";
 
+// İnaktif/Disk/SCCM/TH gibi diğer raporlar repo'yla giden bir "bundled demo veri" klasörüne
+// düşüyor, bu yüzden Render'da (kalıcı olmayan disk) elle bir şey yapmadan çalışıyorlar. Yeni
+// Kurulum/Kapatma Onayı kayıtları Excel'den DEĞİL bu yerel JSON store'dan geldiği için aynı sorun
+// burada da var (bkz. konuşma: "hala eksiklerin var mesela kapatma onayı") — store hiç
+// yazılmamışsa (ilk çalıştırma / Render'da disk sıfırlanmışsa) bundled seed'den otomatik doldurulur.
+const SEED_FILE = path.join(__dirname, "..", "..", "demo-data", "newinstalls-seed.json");
+
 function load() {
-  const s = readSection(SECTION) || {};
+  const s = readSection(SECTION);
+  if (!s) {
+    try {
+      const seed = JSON.parse(fs.readFileSync(SEED_FILE, "utf8"));
+      const seeded = {
+        records: seed.records || [],
+        excelPath: DEFAULT_EXCEL,
+        managedKeys: (seed.records || []).map((r) => `${r.serial}|${r.hostname}`.toLowerCase()),
+      };
+      writeSection(SECTION, seeded);
+      return seeded;
+    } catch {
+      return { records: [], excelPath: DEFAULT_EXCEL, managedKeys: [] };
+    }
+  }
   return {
     records: Array.isArray(s.records) ? s.records : [],
     excelPath: s.excelPath || DEFAULT_EXCEL,

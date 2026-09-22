@@ -132,6 +132,13 @@ export const backendClient = {
   uploadBantGenisligi: (fileName, contentBase64) =>
     request("/settings/bant-genisligi-upload", { method: "POST", body: JSON.stringify({ fileName, contentBase64 }) }),
 
+  // Üst Yönetim İstisna Listesi — kim üst yönetim sayılır artık Excel'den değil, admin'in elle
+  // yönettiği bu sabit e-posta listesinden belirleniyor (bkz. konuşma: "excelden o verileri
+  // çekme hiç"). Okuma herkese açık (mail gönderim ekranları kullanır), yazma admin şifreli.
+  getUstYonetimList: () => request("/ust-yonetim"),
+  getUstYonetimListForSettings: () => request("/settings/ust-yonetim"),
+  saveUstYonetimList: (emails) => request("/settings/ust-yonetim", { method: "PUT", body: JSON.stringify({ emails }) }),
+
   // Cihaz bazlı not/durum/ertele + aksiyon geçmişi (madde 5) — kalıcı; oturum token'ıyla.
   getDeviceMeta: () => request("/devices/meta"),
   saveDeviceMeta: (deviceKey, meta) => request(`/devices/meta/${encodeURIComponent(deviceKey)}`, { method: "PUT", body: JSON.stringify(meta) }),

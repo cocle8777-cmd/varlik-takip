@@ -18,6 +18,7 @@ const authRouter = require("./src/routes/auth");
 const authSettingsRouter = require("./src/routes/authsettings");
 const anomalyScheduleRouter = require("./src/routes/anomalyschedule");
 const bantGenisligiUploadRouter = require("./src/routes/bantgenisligiupload");
+const ustYonetimRouter = require("./src/routes/ustyonetim");
 const anomalyScheduler = require("./src/anomalyScheduler");
 const { verifyCredentials, requireSettingsAuth } = require("./src/auth");
 const { requireAuth, requireMasterAuth } = require("./src/authMiddleware");
@@ -84,6 +85,7 @@ function createApp() {
   // çalışıyor, Mükerrer Çift Zimmet + Lokasyon Hostname/IP Uyuşmazlığı için).
   app.use("/api/settings/anomaly-schedule", requireSettingsAuth, anomalyScheduleRouter);
   app.use("/api/settings/bant-genisligi-upload", requireSettingsAuth, bantGenisligiUploadRouter);
+  app.use("/api/settings/ust-yonetim", requireSettingsAuth, ustYonetimRouter);
 
   // Lokasyon-mail eşleşmeleri (mailGroups) SADECE OKUMA için — Mail Gönder her oturum açmış
   // kullanıcı tarafından kullanılabilmeli, admin şifresi istemeden (bkz. konuşma: "başkası mail
@@ -92,6 +94,13 @@ function createApp() {
   // bilgisini okumak admin yetkisi gerektirmiyor, e-posta adresinden başka hassas bir şey içermiyor.
   app.get("/api/mailgroups", requireAuth, (req, res) => {
     res.json(readSection("mailGroups") || {});
+  });
+
+  // Üst Yönetim İstisna Listesi SADECE OKUMA için — mail gönderim ekranları (Kapatma Onayı vb.)
+  // bu listeyi kontrol edip üst yönetime mail atmayı engellemeli; herkes okuyabilmeli, admin
+  // şifresi istemeden (düzenleme yukarıdaki /api/settings/ust-yonetim ile hâlâ korumalı).
+  app.get("/api/ust-yonetim", requireAuth, (req, res) => {
+    res.json(ustYonetimRouter.loadWithSeed());
   });
 
   // Kullanılmayan Cihazlar raporu "son giriş çok eski" eşiğini (staleDays) okumak için —

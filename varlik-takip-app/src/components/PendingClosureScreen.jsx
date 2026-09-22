@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { backendClient } from "../services/backendClient";
+import { buildUstYonetimEmailSet, isUstYonetimEmail, fetchUstYonetimEmails } from "../services/ustYonetimService";
 import Pagination from "./Pagination";
 
 // "Kapatma Onayı Bekleyen Kayıtlar" — ayrı bir veri kaynağı DEĞİL, "Yeni Kurulum Kaydı" akışının
@@ -85,6 +86,10 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
   const [bulkSending, setBulkSending] = useState(false); // toplu gönderim (üst bar)
   const [mailTo, setMailTo] = useState(""); // boşsa lokasyon mail grubu kullanılır
   const [mailLang, setMailLang] = useState("tr"); // "tr" | "en" — Yeni Kurulum Kaydı'ndaki dil seçimiyle aynı
+  // KRİTİK: üst yönetime hiçbir şekilde mail gitmemeli (bkz. konuşma) — bu liste ARTIK Excel'den
+  // değil, admin'in Ayarlar'dan elle yönettiği sabit e-posta listesinden geliyor (bkz.
+  // ustYonetimService.js). Sayfa açılışında bir kez çekilir.
+  const [ustYonetimEmails, setUstYonetimEmails] = useState(new Set());
 
   const reload = () =>
     backendClient
@@ -95,14 +100,11 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
 
   useEffect(() => {
     reload();
+    fetchUstYonetimEmails()
+      .then((emails) => setUstYonetimEmails(buildUstYonetimEmailSet(emails)))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Kapatma onayı bekleyen = mail gönderildi (mailSentAt var) VE henüz teslim edilmedi.
-  const pending = useMemo(
-    () => records.filter((r) => r.mailSentAt && norm(r.status) !== norm("TESLİM EDİLDİ")),
-    [records]
-  );
 
   // Seri no → TuruncuHat satırı (Barkod/Varlık Adı için — NewInstallScreen.buildMailHtml ile aynı desen).
   const thBySerial = useMemo(() => {
@@ -113,6 +115,19 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
     });
     return m;
   }, [thRows]);
+
+  // Kapatma onayı bekleyen = mail gönderildi (mailSentAt var) VE henüz teslim edilmedi. KRİTİK:
+  // üst yönetime ait kayıtlar bu ekrandan TAMAMEN gizlenir (bkz. konuşma: "üst yönetim listede
+  // gözükmesin hiç") — sadece mail engellenmiyor, görünürlük de yok.
+  const pending = useMemo(
+    () =>
+      records.filter((r) => {
+        if (!r.mailSentAt || norm(r.status) === norm("TESLİM EDİLDİ")) return false;
+        const th = thBySerial.get(norm(r.serial));
+        return !(th && isUstYonetimEmail(ustYonetimEmails, th.ownerMail));
+      }),
+    [records, thBySerial, ustYonetimEmails]
+  );
 
   const overdueCount = useMemo(() => pending.filter((r) => (daysSince(r.mailSentAt) ?? 0) > 7).length, [pending]);
   const unsentCount = useMemo(() => pending.filter((r) => !r.closureReminderSentAt).length, [pending]);
@@ -175,11 +190,21 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
   // Tek satır — satırdaki "Gönder"/"Tekrar Hatırlat" butonu.
   const sendReminder = async (r) => {
     const th = thBySerial.get(norm(r.serial));
+    // KRİTİK: üst yönetime hiçbir şekilde mail gitmemeli (bkz. konuşma) — bu yüzden manuel
+    // e-posta sorma adımına bile gelinmeden en başta engelleniyor.
+    if (th && isUstYonetimEmail(ustYonetimEmails, th.ownerMail)) {
+      showToast && showToast("⛔ Üst yönetim — bu kişiye hatırlatma maili gönderilmez");
+      return;
+    }
     let to = (th && th.ownerMail) || "";
     if (!to) {
       const entered = window.prompt(`"${r.userInfo || r.serial}" için TuruncuHat'ta mail adresi bulunamadı — alıcı e-posta girin:`, "");
       if (!entered || !entered.trim()) return;
       to = entered.trim();
+      if (isUstYonetimEmail(ustYonetimEmails, to)) {
+        showToast && showToast("⛔ Üst yönetim — bu kişiye hatırlatma maili gönderilmez");
+        return;
+      }
     }
     setSendingId(r.id);
     const T = MAIL_TEXT[mailLang] || MAIL_TEXT.tr;
@@ -215,17 +240,43 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
       showToast && showToast("Gönderilecek kayıt yok");
       return;
     }
+    // KRİTİK: üst yönetime hiçbir şekilde mail gitmemeli (bkz. konuşma) — hem manuel alıcı hem
+    // kişiye-göre-grupla yollarından ÖNCE, en başta hedef listeden çıkarılıyor.
+    const ustYonetimSkipped = targetRecs.filter((r) => {
+      const th = thBySerial.get(norm(r.serial));
+      return th && isUstYonetimEmail(ustYonetimEmails, th.ownerMail);
+    });
+    const sendableRecs = targetRecs.filter((r) => !ustYonetimSkipped.includes(r));
+    if (sendableRecs.length === 0) {
+      showToast && showToast(`⛔ Seçili ${targetRecs.length} kaydın tamamı üst yönetime ait — mail gönderilmedi`);
+      setBulkSending(false);
+      return;
+    }
     const T = MAIL_TEXT[mailLang] || MAIL_TEXT.tr;
-    const manual = mailTo.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
+    const manualAll = mailTo.split(/[;,\s]+/).map((s) => s.trim()).filter((s) => /@/.test(s));
+    // Elle girilen alıcı üst yönetim listesindeyse (admin bilerek/bilmeyerek yazmış olsa bile)
+    // KRİTİK kural burada da geçerli — o adres tamamen çıkarılır.
+    const manual = manualAll.filter((e) => !isUstYonetimEmail(ustYonetimEmails, e));
+    const manualBlocked = manualAll.length - manual.length;
+    if (manualAll.length > 0 && manual.length === 0) {
+      showToast && showToast("⛔ Girilen adres(ler) üst yönetime ait — mail gönderilmedi");
+      setBulkSending(false);
+      return;
+    }
     setBulkSending(true);
     try {
       if (manual.length > 0) {
         // Elle girilen alıcı — tek hedef, tüm hedef kayıtlar aynı mailde.
         const to = manual.join(", ");
-        const res = await backendClient.sendMail({ to, subject: T.subject, text: T.plain, html: buildClosureReminderHtml(targetRecs, thBySerial, mailLang) });
+        const res = await backendClient.sendMail({ to, subject: T.subject, text: T.plain, html: buildClosureReminderHtml(sendableRecs, thBySerial, mailLang) });
         if (res.ok) {
-          await backendClient.markClosureReminderSent(targetRecs.map((r) => r.id));
-          showToast && showToast(`✅ Hatırlatma gönderildi — ${targetRecs.length} kayıt (${to})`);
+          await backendClient.markClosureReminderSent(sendableRecs.map((r) => r.id));
+          showToast &&
+            showToast(
+              `✅ Hatırlatma gönderildi — ${sendableRecs.length} kayıt (${to})${
+                ustYonetimSkipped.length ? ` · ${ustYonetimSkipped.length} üst yönetim kaydı hariç tutuldu` : ""
+              }${manualBlocked ? ` · ${manualBlocked} üst yönetim adresi engellendi` : ""}`
+            );
         } else {
           showToast && showToast(`❌ Gönderilemedi — ${res.message || ""}`);
         }
@@ -235,7 +286,7 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
         // birleşir (bkz. konuşma).
         const groups = new Map(); // to (email) -> records[]
         const missing = new Set();
-        targetRecs.forEach((r) => {
+        sendableRecs.forEach((r) => {
           const th = thBySerial.get(norm(r.serial));
           const to = (th && th.ownerMail) || "";
           if (!to) {
@@ -249,8 +300,12 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
         for (const person of missing) {
           const entered = window.prompt(`"${person}" için TuruncuHat'ta mail adresi bulunamadı — alıcı e-posta girin (boş bırakırsan bu kayıtlar atlanır):`, "");
           const email = (entered || "").trim();
+          if (email && isUstYonetimEmail(ustYonetimEmails, email)) {
+            showToast && showToast(`⛔ "${person}" için girilen adres üst yönetime ait — atlandı`);
+            continue;
+          }
           if (email && /@/.test(email)) {
-            const recs = targetRecs.filter((r) => (r.userInfo || r.serial || "(bilinmeyen)") === person);
+            const recs = sendableRecs.filter((r) => (r.userInfo || r.serial || "(bilinmeyen)") === person);
             if (!groups.has(email)) groups.set(email, []);
             groups.get(email).push(...recs);
           }
@@ -274,9 +329,9 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
         if (sentRecords.length > 0) await backendClient.markClosureReminderSent(sentRecords.map((r) => r.id));
         showToast &&
           showToast(
-            `${failCount === 0 ? "✅" : "⚠️"} ${groups.size} lokasyona ayrı mail gönderildi — ${sentRecords.length}/${targetRecs.length} kayıt${
-              failCount ? `, ${failCount} lokasyon başarısız` : ""
-            }`
+            `${failCount === 0 ? "✅" : "⚠️"} ${groups.size} kişiye ayrı mail gönderildi — ${sentRecords.length}/${sendableRecs.length} kayıt${
+              failCount ? `, ${failCount} gönderim başarısız` : ""
+            }${ustYonetimSkipped.length ? ` · ${ustYonetimSkipped.length} üst yönetim kaydı hariç tutuldu` : ""}`
           );
       }
       await reload();
@@ -408,6 +463,7 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
                     const days = daysSince(r.mailSentAt);
                     const overdue = (days ?? 0) > 7;
                     const th = thBySerial.get(norm(r.serial));
+                    const ustYonetim = th && isUstYonetimEmail(ustYonetimEmails, th.ownerMail);
                     return (
                       <tr key={r.id} style={selected.has(r.id) ? styles.rowSelected : undefined}>
                         <td style={styles.td} onClick={(e) => e.stopPropagation()}>
@@ -435,25 +491,36 @@ export default function PendingClosureScreen({ styles, pal, showToast, thRows = 
                           )}
                         </td>
                         <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
-                          {/* Bize dönüş yapmayanlar için tekrar hatırlatma — bkz. konuşma. Aynı buton/aynı
-                              işlev, ama ilk gönderimden sonra "Tekrar Hatırlat" etiketine değişip son
-                              gönderimden bu yana kaç gün geçtiğini gösteriyor, takip kolaylaşsın. */}
-                          <button
-                            style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12 }}
-                            onClick={() => sendReminder(r)}
-                            disabled={sendingId === r.id}
-                            title={
-                              r.closureReminderSentAt
-                                ? `Son hatırlatma ${new Date(r.closureReminderSentAt).toLocaleDateString("tr-TR")} — dönüş gelmediyse tekrar gönder (${mailLang === "en" ? "EN" : "TR"})`
-                                : `Kapatma onayı hatırlatma maili gönder (${mailLang === "en" ? "EN" : "TR"})`
-                            }
-                          >
-                            {sendingId === r.id
-                              ? "Gönderiliyor…"
-                              : r.closureReminderSentAt
-                              ? `🔁 Tekrar Hatırlat (${mailLang === "en" ? "EN" : "TR"})`
-                              : `✉️ Gönder (${mailLang === "en" ? "EN" : "TR"})`}
-                          </button>
+                          {/* KRİTİK: üst yönetime hiçbir şekilde mail gitmemeli (bkz. konuşma) — gönder
+                              butonu bu satırlarda hiç render edilmiyor, sadece bilgilendirici bir
+                              rozet gösteriliyor. Diğerlerinde: bize dönüş yapmayanlar için tekrar
+                              hatırlatma — aynı buton, ilk gönderimden sonra "Tekrar Hatırlat" etiketine
+                              değişip son gönderimden bu yana kaç gün geçtiğini gösteriyor. */}
+                          {ustYonetim ? (
+                            <span
+                              style={{ ...styles.badge, background: `${pal.bad}1e`, color: pal.bad }}
+                              title="Üst yönetim — bu kişiye kapatma onayı hatırlatma maili gönderilmez"
+                            >
+                              🔒 Üst Yönetim
+                            </span>
+                          ) : (
+                            <button
+                              style={{ ...styles.btnGhost, padding: "4px 10px", fontSize: 12 }}
+                              onClick={() => sendReminder(r)}
+                              disabled={sendingId === r.id}
+                              title={
+                                r.closureReminderSentAt
+                                  ? `Son hatırlatma ${new Date(r.closureReminderSentAt).toLocaleDateString("tr-TR")} — dönüş gelmediyse tekrar gönder (${mailLang === "en" ? "EN" : "TR"})`
+                                  : `Kapatma onayı hatırlatma maili gönder (${mailLang === "en" ? "EN" : "TR"})`
+                              }
+                            >
+                              {sendingId === r.id
+                                ? "Gönderiliyor…"
+                                : r.closureReminderSentAt
+                                ? `🔁 Tekrar Hatırlat (${mailLang === "en" ? "EN" : "TR"})`
+                                : `✉️ Gönder (${mailLang === "en" ? "EN" : "TR"})`}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
