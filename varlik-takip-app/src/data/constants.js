@@ -20,7 +20,6 @@ export const REPORT_CATEGORIES = [
       { id: "kullanilmayan", name: "Kullanılmayan Cihazlar" },
       { id: "kapatma-onayi", name: "Kapatma Onayı Bekleyen Kayıtlar" },
       { id: "yeni-kurulum", name: "Yeni Kurulum Kaydı" },
-      { id: "low-battery", name: "Low Battery" },
       { id: "checkpoint", name: "Checkpoint" },
       { id: "bitlocker", name: "BitLocker Kontrol" },
       { id: "sccm-ajan", name: "SCCM Ajan Raporu" },
@@ -50,7 +49,6 @@ export const REPORTS_WITHOUT_MODEL_FILTER = new Set(["disk", "bsod", "battery-he
 // Sol menü — Network (gereksinim #1). Kaynak şu an manuel yükleme; ileride SharePoint/API'ye
 // geçilebilir (bkz. services/dataSourceAdapter.js).
 export const NETWORK_ITEMS = [
-  { id: "down-ofisler", name: "Down Ofisler" },
   { id: "bant-genisligi", name: "Ofis Bant Genişliği" },
 ];
 
