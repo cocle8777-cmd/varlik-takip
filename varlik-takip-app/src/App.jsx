@@ -18,6 +18,7 @@ import { mapMonitorRows, fetchMonitorRowsFromFile } from "./services/monitorFile
 import { fetchLokasyonMailRowsFromFile, resolveMailForLocationName } from "./services/lokasyonMailService";
 import { computeLocationIpRows, buildLocationIpMailHtml, locationIpMailSubject } from "./services/locationIpService";
 import { mapBsodRows, fetchBsodRowsFromFile } from "./services/bsodFileService";
+import { mapBantRows } from "./services/bantGenisligiService";
 import { mapBatteryRows, buildBatteryMailHtml, batteryMailSubject } from "./services/batteryFileService";
 import { buildBsodMailHtml, bsodMailSubject, bsodCoverage, lookupBsod } from "./services/bsodKnowledgeService";
 import { computeInaktifDashboard, computeDiskDashboard, computeZimmetLocationBreakdown, computeCombinedLocationTrend, classifyDisk, DISK_THRESHOLDS_GB } from "./services/dashboardService";
@@ -31,6 +32,7 @@ import { buildUnusedDeviceMailHtml, unusedDeviceMailSubject } from "./services/u
 import DeviceOverviewCard from "./components/DeviceOverviewCard";
 import NewInstallScreen from "./components/NewInstallScreen";
 import PendingClosureScreen from "./components/PendingClosureScreen";
+import BantGenisligiScreen from "./components/BantGenisligiScreen";
 import AppFooter from "./components/AppFooter";
 import { LIGHT_PALETTE, DARK_PALETTE, AERO_PALETTE } from "./theme/palette";
 import { buildStyles } from "./theme/buildStyles";
@@ -314,6 +316,11 @@ export default function App({ user, onLogout } = {}) {
   // LAKESIDE "Weekly_BSOD" raporu — sadece elle dosya seçimi (bkz. bsodFileService.js)
   const [realBsodAll, setRealBsodAll] = useState([]);
   const [realBsodMeta, setRealBsodMeta] = useState(null);
+  // Ofis Bant Genişliği — monitoring aracının CSV export'u, elle yükleniyor (bkz. konuşma).
+  const [realBantAll, setRealBantAll] = useState([]);
+  const [realBantMeta, setRealBantMeta] = useState(null);
+  const [bantSearch, setBantSearch] = useState("");
+  const [bantStatusFilter, setBantStatusFilter] = useState("all"); // all | warning | ok
   const [bsodMailTo, setBsodMailTo] = useState("");
   // LAKESIDE "Battery Health" — TH ile aynı: elle Excel seçimi (bkz. batteryFileService.js)
   const [realBatteryAll, setRealBatteryAll] = useState([]);
@@ -2332,6 +2339,30 @@ IT Support`;
     reader.readAsArrayBuffer(file);
   };
 
+  // Ofis Bant Genişliği — monitoring aracının UTF-16 + TAB ayraçlı CSV export'u. SheetJS
+  // kodlamayı/ayracı otomatik algılıyor; { raw: false } ile "Uyarı Durumu" sütunundaki "-%15" gibi
+  // metinler sayıya çevrilmeden aynen okunuyor (bkz. konuşma).
+  const handleManualBantFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+        const rows = mapBantRows(raw);
+        setRealBantAll(rows);
+        setRealBantMeta({ fileName: file.name, modifiedAt: new Date(file.lastModified).toISOString() });
+        showToast(`${file.name} içinden ${rows.length} bant genişliği kaydı yüklendi${rows.length === 0 ? " (dosya boş)" : ""}`);
+      } catch (err) {
+        showToast(`Dosya okunamadı: ${err.message}`);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const handleManualBsodFile = (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -3989,6 +4020,19 @@ IT Support`;
             />
           ) : activeReport === "kapatma-onayi" ? (
             <PendingClosureScreen styles={styles} pal={pal} showToast={showToast} thRows={realThAll} />
+          ) : activeNetworkView === "bant-genisligi" ? (
+            <BantGenisligiScreen
+              styles={styles}
+              pal={pal}
+              rows={realBantAll}
+              meta={realBantMeta}
+              lokasyonRows={realLokasyonMailAll}
+              search={bantSearch}
+              setSearch={setBantSearch}
+              statusFilter={bantStatusFilter}
+              setStatusFilter={setBantStatusFilter}
+              onFileSelect={handleManualBantFile}
+            />
           ) : activeNetworkView ? (
             <>
               <div style={{ ...styles.panel, padding: "20px 24px" }}>
